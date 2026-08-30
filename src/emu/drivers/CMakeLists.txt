@@ -28,6 +28,14 @@ else()
             src/audio/backend/cubeb/stream_cubeb.cpp)
 endif()
 
+if (EKA2L1_BUILD_LIBRETRO)
+    set(DRIVERS_LIBRETRO_SRC
+            include/drivers/graphics/backend/emu_window_libretro.h
+            include/drivers/graphics/backend/context_libretro.h
+            src/graphics/backend/emu_window_libretro.cpp
+            src/graphics/backend/context_libretro.cpp)
+endif()
+
 if (EKA2L1_HAVE_FFMPEG)
     set(DRIVERS_FFMPEG_SRC
             include/drivers/audio/backend/ffmpeg/dsp_ffmpeg.h
@@ -119,6 +127,7 @@ add_library(drivers
         ${DRIVERS_AUDIOUNIT_IOS_SRC}
         ${DRIVERS_CUBEB_SRC}
         ${DRIVERS_FFMPEG_SRC}
+        ${DRIVERS_LIBRETRO_SRC}
         ${DRIVERS_HWRM_IOS_SRC}
         ${DRIVERS_OGL_SRC}
         ${DRIVERS_VULKAN_SRC})
@@ -254,6 +263,12 @@ endif()
 if (EKA2L1_HAVE_FFMPEG)
     target_link_libraries(drivers PRIVATE ffmpeg)
     target_compile_definitions(drivers PRIVATE EKA2L1_HAS_FFMPEG=1)
+endif()
+
+# Picks the libretro window and context over the platform's own: the frontend
+# already has both, so there is nothing for a native backend to create.
+if (EKA2L1_BUILD_LIBRETRO)
+    target_compile_definitions(drivers PUBLIC EKA2L1_LIBRETRO=1)
 endif()
 if (ANDROID)
     target_link_libraries(drivers PRIVATE android)

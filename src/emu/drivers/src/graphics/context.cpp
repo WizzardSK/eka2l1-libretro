@@ -20,7 +20,9 @@
 #include <drivers/graphics/context.h>
 #include <common/platform.h>
 
-#if EKA2L1_PLATFORM(WIN32)
+#ifdef EKA2L1_LIBRETRO
+#include "backend/context_libretro.h"
+#elif EKA2L1_PLATFORM(WIN32)
 #include "backend/context_wgl.h"
 #elif EKA2L1_PLATFORM(IOS)
 #include "backend/context_eagl.h"
@@ -38,7 +40,10 @@ namespace eka2l1::drivers::graphics {
         {{4, 6}, {4, 5}, {4, 4}, {4, 3}, {4, 2}, {4, 1}, {4, 0}, {3, 3}, {3, 2}, {3, 1}, {3, 0} }};
 
     std::unique_ptr<gl_context> make_gl_context(const drivers::window_system_info &system_info, const bool stereo, const bool core) {
-#if EKA2L1_PLATFORM(WIN32)
+#ifdef EKA2L1_LIBRETRO
+        // The frontend owns the context; nothing is created here.
+        return std::make_unique<gl_context_libretro>(system_info, stereo, core);
+#elif EKA2L1_PLATFORM(WIN32)
         return std::make_unique<gl_context_wgl>(system_info, stereo, core);
 #elif EKA2L1_PLATFORM(IOS)
         return std::make_unique<gl_context_eagl>(system_info, stereo, core);
