@@ -15,6 +15,7 @@ endif()
 
 set(EKA2L1_IOS_DEPLOYMENT_TARGET "16.0" CACHE STRING "Minimum iOS version to target")
 
+option(EKA2L1_BUILD_LIBRETRO "Build the libretro core instead of a desktop frontend" OFF)
 option(EKA2L1_BUILD_TOOLS "Build EKA2L1's tool" ON)
 option(EKA2L1_BUILD_TESTS "Build EKA2L1's tests" ON)
 option(EKA2L1_ENABLE_SCRIPTING_ABILITY "Enable to script with Python or Lua" ON)
@@ -134,6 +135,14 @@ if (APPLE)
     # The bundled boost (pulled in by dynarmic) still uses std::unary_function,
     # which libc++ no longer declares in C++17 and later modes.
     add_compile_definitions(_LIBCPP_ENABLE_CXX17_REMOVED_UNARY_BINARY_FUNCTION=1)
+endif()
+
+# A libretro core is a shared object the frontend loads, so every static library
+# it pulls in has to be built position independent.
+if (EKA2L1_BUILD_LIBRETRO)
+    set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+    set(EKA2L1_BUILD_TOOLS OFF CACHE BOOL "Not built for the libretro core" FORCE)
+    set(EKA2L1_BUILD_TESTS OFF CACHE BOOL "Not built for the libretro core" FORCE)
 endif()
 
 if (EKA2L1_BUILD_VULKAN_BACKEND)
