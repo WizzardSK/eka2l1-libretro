@@ -18,6 +18,8 @@
 #include <cstring>
 
 #include <common/configure.h>
+#include <config/config.h>
+#include <system/devices.h>
 
 #include <libretro.h>
 
@@ -61,6 +63,18 @@ RETRO_API void retro_set_input_state(retro_input_state_t cb) { input_state_cb = 
 RETRO_API void retro_init(void) {
     if (log_cb)
         log_cb(RETRO_LOG_INFO, "EKA2L1 " CURRENT_EKA2L1_VERSION_STRING " libretro core\n");
+
+    // Ask the emulator what devices are installed. Nothing is done with the
+    // answer yet - a Symbian title runs on a device installed from a firmware
+    // dump, and deciding where that lives and how the frontend points at one is
+    // the next piece of work. It is here now because it is the first real call
+    // into the emulator, and linking a static emulator into a shared object is
+    // the thing this skeleton exists to prove.
+    eka2l1::config::state conf;
+    eka2l1::device_manager devices(&conf);
+
+    if (log_cb)
+        log_cb(RETRO_LOG_INFO, "Devices installed: %zu\n", devices.get_devices().size());
 }
 
 RETRO_API void retro_deinit(void) {}
