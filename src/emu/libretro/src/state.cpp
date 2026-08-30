@@ -15,6 +15,7 @@ namespace eka2l1::libretro {
         // The frontend's directory wins over whatever the config file carries:
         // a core does not get to keep state where it likes.
         conf.storage = data_root;
+        data_root_ = data_root;
 
         app_settings = std::make_unique<config::app_settings>(&conf);
 

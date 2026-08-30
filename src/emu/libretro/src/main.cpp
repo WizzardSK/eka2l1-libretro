@@ -43,6 +43,7 @@ namespace {
 
     retro_hw_render_callback hw_render{};
     bool emulator_started = false;
+    std::string content_path;
 
     // Everything the emulator keeps - configuration, the devices installed from
     // firmware dumps, the virtual drives - under the directory the frontend
@@ -60,9 +61,11 @@ extern "C" {
 RETRO_API void retro_set_environment(retro_environment_t cb) {
     env_cb = cb;
 
-    // Nothing to load yet, and no content model to load it with, so the core
-    // starts without content for the moment.
-    bool no_content = true;
+    // A title is required: with none there is nothing to show, and EKA2L1 has
+    // no application menu of its own to fall back on - drivers::ui is a bridge
+    // for the dialogs Symbian asks for, not a launcher. Every frontend has a
+    // file browser, and it is a better one than a core could draw.
+    bool no_content = false;
     cb(RETRO_ENVIRONMENT_SET_SUPPORT_NO_GAME, &no_content);
 
     retro_log_callback log{};
@@ -83,6 +86,8 @@ RETRO_API void retro_init(void) {
     const std::string root = data_root();
     emu.bring_up(root);
 
+    emu.install_device_if_needed(root + "/firmware");
+
     const std::size_t devices = emu.device_count();
     if (log_cb) {
         log_cb(RETRO_LOG_INFO, "Data directory: %s\n", root.c_str());
@@ -92,7 +97,7 @@ RETRO_API void retro_init(void) {
         // title runs on a device built from a firmware dump, and without one
         // there is nothing for the emulator to start.
         if (devices == 0)
-            log_cb(RETRO_LOG_WARN, "No device installed - nothing can be run until one is.\n");
+            log_cb(RETRO_LOG_WARN, "No device installed. Put a firmware dump in %s/firmware and load content again.\n", root.c_str());
     }
 }
 
@@ -106,10 +111,9 @@ RETRO_API void retro_get_system_info(struct retro_system_info *info) {
     std::memset(info, 0, sizeof(*info));
     info->library_name = "EKA2L1";
     info->library_version = CURRENT_EKA2L1_VERSION_STRING;
-    // A Symbian title is installed into a device rather than opened from a
-    // path, so what belongs here is still an open question - see the note at
-    // the top of this file.
-    info->valid_extensions = "sis|sisx|n-gage";
+    // A package to install and launch, or a shortcut naming what is already
+    // installed - see CONTENT_MODEL.md.
+    info->valid_extensions = "sis|sisx|n-gage|eka2l1";
     info->need_fullpath = true;
     info->block_extract = true;
 }
@@ -171,6 +175,13 @@ namespace {
             // different framebuffer each time.
             return static_cast<unsigned int>(hw_render.get_current_framebuffer());
         });
+
+        if (emulator_started && !content_path.empty()) {
+            if (!emu.load_content(content_path)) {
+                if (log_cb)
+                    log_cb(RETRO_LOG_ERROR, "Could not start %s\n", content_path.c_str());
+            }
+        }
     }
 
     void context_destroy() {
@@ -179,7 +190,7 @@ namespace {
     }
 }
 
-RETRO_API bool retro_load_game(const struct retro_game_info *) {
+RETRO_API bool retro_load_game(const struct retro_game_info *game) {
     // Which context to ask for: a phone has GLES, a desktop has both and the
     // emulator's GL backend detects what it got either way.
 #ifdef ANDROID
@@ -201,10 +212,13 @@ RETRO_API bool retro_load_game(const struct retro_game_info *) {
         return false;
     }
 
-    // The emulator itself starts from context_reset, once there is a context
-    // to render into. What content means here - a title is installed into a
-    // device and launched by UID, not opened from a path - is the next thing
-    // to settle.
+    // The title is remembered rather than started: the emulator itself comes up
+    // in context_reset, when there is a context to render into.
+    if (!game || !game->path) {
+        return false;
+    }
+
+    content_path = game->path;
     return true;
 }
 
