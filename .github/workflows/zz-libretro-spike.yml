@@ -1,0 +1,49 @@
+# Feasibility spike for a libretro core, not a build anyone ships.
+#
+# Two questions, in order: do the emulator's own libraries - the ones a core
+# would link - compile for arm64 Linux, and does the whole thing still build
+# with tools, tests and the Lua runtime switched off, which is the shape a core
+# would want. arm64 because that is what the target devices are; upstream CI
+# only covers x86_64.
+name: libretro spike
+
+on:
+  push:
+    branches: [libretro-spike]
+  workflow_dispatch:
+
+jobs:
+  linux-arm64:
+    name: Linux arm64 (spike)
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 240
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get -y install build-essential ninja-build libc6-dev \
+            libgtk-3-dev libpulse-dev libasound2-dev libsdl2-dev \
+            qt6-base-dev qt6-base-private-dev qt6-tools-dev \
+            qt6-tools-dev-tools qt6-l10n-tools libqt6svg6-dev
+
+      - name: Configure
+        run: |
+          cmake -B build -G Ninja -DCI=ON -DCMAKE_BUILD_TYPE=Release \
+            -DEKA2L1_BUILD_TOOLS=OFF \
+            -DEKA2L1_BUILD_TESTS=OFF \
+            -DEKA2L1_SCRIPTING_LUA=OFF
+
+      # What a core would actually link. If this passes, the port is a frontend
+      # problem; if it does not, it is a bigger one.
+      - name: Build the emulator libraries
+        run: cmake --build build --parallel 4 --target epoc drivers cpu
+
+      # And the whole application, to see whether anything outside those
+      # libraries objects to the arm64 host.
+      - name: Build the Qt frontend
+        run: cmake --build build --parallel 4 --target eka2l1_qt
