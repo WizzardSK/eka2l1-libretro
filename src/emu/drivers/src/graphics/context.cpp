@@ -21,7 +21,7 @@
 #include <common/platform.h>
 
 #ifdef EKA2L1_LIBRETRO
-#include "backend/context_libretro.h"
+#include <drivers/graphics/backend/context_libretro.h>
 #elif EKA2L1_PLATFORM(WIN32)
 #include "backend/context_wgl.h"
 #elif EKA2L1_PLATFORM(IOS)
