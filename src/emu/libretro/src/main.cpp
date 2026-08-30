@@ -13,6 +13,7 @@
  * installed into a virtual device and launched by UID, not loaded from a path.
  */
 
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 
