@@ -62,8 +62,4 @@ namespace eka2l1::libretro {
         return symsys->get_device_manager()->total();
     }
 
-    void emulator::shut_down() {
-        symsys.reset();
-        app_settings.reset();
-    }
 }

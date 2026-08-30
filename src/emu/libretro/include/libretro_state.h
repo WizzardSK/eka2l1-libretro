@@ -5,10 +5,17 @@
 
 #include <config/app_settings.h>
 #include <config/config.h>
+#include <drivers/graphics/backend/emu_window_libretro.h>
+#include <drivers/graphics/graphics.h>
 #include <system/epoc.h>
 
+#include <atomic>
+#include <condition_variable>
 #include <memory>
+#include <mutex>
+#include <functional>
 #include <string>
+#include <thread>
 
 namespace eka2l1::libretro {
     // The emulator, as a core sees it.
@@ -33,6 +40,39 @@ namespace eka2l1::libretro {
         // however good the rest of the core is.
         std::size_t device_count() const;
 
+        // Start the emulator's own two threads: one running the Symbian OS
+        // loop, one processing graphics commands. Neither is frame-stepped -
+        // EKA2L1 has no "run one frame" call - so retro_run does not drive
+        // them, it waits for them (see wait_for_frame).
+        //
+        // The graphics thread is the one that has to be started from the
+        // frontend's video thread, because that is where its GL context is
+        // current.
+        bool start(std::function<unsigned int()> framebuffer_getter);
+
+        // Blocks until the emulator presents a frame, or until the timeout -
+        // a title that draws nothing must not take the frontend down with it.
+        // Returns false on the timeout.
+        bool wait_for_frame();
+
         void shut_down();
+
+        drivers::emu_window_libretro *window() { return window_.get(); }
+
+    private:
+        void graphics_thread_main(std::function<unsigned int()> framebuffer_getter);
+        void os_thread_main();
+
+        std::unique_ptr<drivers::emu_window_libretro> window_;
+        std::unique_ptr<drivers::graphics_driver> graphics_driver_;
+
+        std::unique_ptr<std::thread> os_thread_;
+        std::unique_ptr<std::thread> graphics_thread_;
+
+        std::atomic<bool> should_quit_{false};
+
+        std::mutex frame_mutex_;
+        std::condition_variable frame_cv_;
+        bool frame_ready_ = false;
     };
 }
