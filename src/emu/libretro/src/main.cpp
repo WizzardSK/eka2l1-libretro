@@ -18,10 +18,11 @@
 #include <cstring>
 
 #include <common/configure.h>
-#include <config/config.h>
-#include <system/devices.h>
 
 #include <libretro.h>
+#include <libretro_state.h>
+
+#include <string>
 
 namespace {
     retro_environment_t env_cb = nullptr;
@@ -37,6 +38,18 @@ namespace {
     // told until then.
     constexpr unsigned DEFAULT_WIDTH = 176;
     constexpr unsigned DEFAULT_HEIGHT = 208;
+
+    eka2l1::libretro::emulator emu;
+
+    // Everything the emulator keeps - configuration, the devices installed from
+    // firmware dumps, the virtual drives - under the directory the frontend
+    // hands out for exactly that.
+    std::string data_root() {
+        const char *system_dir = nullptr;
+        if (env_cb && env_cb(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &system_dir) && system_dir)
+            return std::string(system_dir) + "/eka2l1";
+        return "eka2l1";
+    }
 }
 
 extern "C" {
@@ -64,20 +77,25 @@ RETRO_API void retro_init(void) {
     if (log_cb)
         log_cb(RETRO_LOG_INFO, "EKA2L1 " CURRENT_EKA2L1_VERSION_STRING " libretro core\n");
 
-    // Ask the emulator what devices are installed. Nothing is done with the
-    // answer yet - a Symbian title runs on a device installed from a firmware
-    // dump, and deciding where that lives and how the frontend points at one is
-    // the next piece of work. It is here now because it is the first real call
-    // into the emulator, and linking a static emulator into a shared object is
-    // the thing this skeleton exists to prove.
-    eka2l1::config::state conf;
-    eka2l1::device_manager devices(&conf);
+    const std::string root = data_root();
+    emu.bring_up(root);
 
-    if (log_cb)
-        log_cb(RETRO_LOG_INFO, "Devices installed: %zu\n", devices.get_devices().size());
+    const std::size_t devices = emu.device_count();
+    if (log_cb) {
+        log_cb(RETRO_LOG_INFO, "Data directory: %s\n", root.c_str());
+        log_cb(RETRO_LOG_INFO, "Devices installed: %zu\n", devices);
+
+        // Worth saying plainly rather than failing obscurely later: a Symbian
+        // title runs on a device built from a firmware dump, and without one
+        // there is nothing for the emulator to start.
+        if (devices == 0)
+            log_cb(RETRO_LOG_WARN, "No device installed - nothing can be run until one is.\n");
+    }
 }
 
-RETRO_API void retro_deinit(void) {}
+RETRO_API void retro_deinit(void) {
+    emu.shut_down();
+}
 
 RETRO_API unsigned retro_api_version(void) { return RETRO_API_VERSION; }
 
