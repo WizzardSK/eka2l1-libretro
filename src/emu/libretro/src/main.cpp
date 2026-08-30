@@ -41,6 +41,9 @@ namespace {
 
     eka2l1::libretro::emulator emu;
 
+    retro_hw_render_callback hw_render{};
+    bool emulator_started = false;
+
     // Everything the emulator keeps - configuration, the devices installed from
     // firmware dumps, the virtual drives - under the directory the frontend
     // hands out for exactly that.
@@ -130,17 +133,87 @@ RETRO_API void retro_run(void) {
     if (input_poll_cb)
         input_poll_cb();
 
-    // No emulation yet: hand the frontend a repeat of nothing so it has a
-    // frame to pace on.
+    if (!emulator_started) {
+        // Nothing is running: hand the frontend a repeat so it has something
+        // to pace on rather than a stall.
+        if (video_cb)
+            video_cb(nullptr, DEFAULT_WIDTH, DEFAULT_HEIGHT, 0);
+        return;
+    }
+
+    // The emulator is not frame-stepped, so this waits for it rather than
+    // driving it. A title that draws nothing still returns - the frontend then
+    // repeats the last frame, which is better than a frozen frontend.
+    const bool got_frame = emu.wait_for_frame();
+
     if (video_cb)
-        video_cb(nullptr, DEFAULT_WIDTH, DEFAULT_HEIGHT, DEFAULT_WIDTH * sizeof(std::uint32_t));
+        video_cb(got_frame ? RETRO_HW_FRAME_BUFFER_VALID : nullptr, DEFAULT_WIDTH, DEFAULT_HEIGHT, 0);
 }
 
-RETRO_API bool retro_load_game(const struct retro_game_info *) { return true; }
+namespace {
+    // The frontend's context exists from here until context_destroy, and this
+    // is the thread it is current on - so this is where the emulator's own
+    // threads may start, and where they have to stop.
+    void context_reset() {
+        if (log_cb)
+            log_cb(RETRO_LOG_INFO, "Frontend GL context ready\n");
+
+        if (emu.device_count() == 0) {
+            // Refused rather than half-started: without a device there is
+            // nothing to run, and saying so once is kinder than a black screen.
+            if (log_cb)
+                log_cb(RETRO_LOG_ERROR, "No device installed - not starting the emulator.\n");
+            return;
+        }
+
+        emulator_started = emu.start([]() -> unsigned int {
+            // Per frame, never cached: the frontend is entitled to hand over a
+            // different framebuffer each time.
+            return static_cast<unsigned int>(hw_render.get_current_framebuffer());
+        });
+    }
+
+    void context_destroy() {
+        emu.shut_down();
+        emulator_started = false;
+    }
+}
+
+RETRO_API bool retro_load_game(const struct retro_game_info *) {
+    // Which context to ask for: a phone has GLES, a desktop has both and the
+    // emulator's GL backend detects what it got either way.
+#ifdef ANDROID
+    hw_render.context_type = RETRO_HW_CONTEXT_OPENGLES3;
+#else
+    hw_render.context_type = RETRO_HW_CONTEXT_OPENGL_CORE;
+    hw_render.version_major = 3;
+    hw_render.version_minor = 3;
+#endif
+    hw_render.context_reset = context_reset;
+    hw_render.context_destroy = context_destroy;
+    hw_render.depth = true;
+    hw_render.bottom_left_origin = true;
+    hw_render.cache_context = false;
+
+    if (!env_cb || !env_cb(RETRO_ENVIRONMENT_SET_HW_RENDER, &hw_render)) {
+        if (log_cb)
+            log_cb(RETRO_LOG_ERROR, "The frontend cannot provide an OpenGL context; this core needs one.\n");
+        return false;
+    }
+
+    // The emulator itself starts from context_reset, once there is a context
+    // to render into. What content means here - a title is installed into a
+    // device and launched by UID, not opened from a path - is the next thing
+    // to settle.
+    return true;
+}
 
 RETRO_API bool retro_load_game_special(unsigned, const struct retro_game_info *, size_t) { return false; }
 
-RETRO_API void retro_unload_game(void) {}
+RETRO_API void retro_unload_game(void) {
+    emu.shut_down();
+    emulator_started = false;
+}
 
 RETRO_API unsigned retro_get_region(void) { return RETRO_REGION_NTSC; }
 
