@@ -31,7 +31,7 @@ endif()
 if (EKA2L1_BUILD_LIBRETRO)
     set(DRIVERS_LIBRETRO_SRC
             include/drivers/graphics/backend/emu_window_libretro.h
-            include/drivers/graphics/backend/context_libretro.h
+            src/graphics/backend/context_libretro.h
             src/graphics/backend/emu_window_libretro.cpp
             src/graphics/backend/context_libretro.cpp)
 endif()
