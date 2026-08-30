@@ -1,7 +1,7 @@
 // Copyright (c) 2026 EKA2L1 Team.
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-#include <drivers/graphics/backend/context_libretro.h>
+#include "context_libretro.h"
 
 namespace eka2l1::drivers::graphics {
     std::function<unsigned int()> gl_context_libretro::s_framebuffer_getter;
