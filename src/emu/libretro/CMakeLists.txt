@@ -7,6 +7,7 @@
 
 add_library(eka2l1_libretro SHARED
     src/main.cpp
+    src/content.cpp
     src/state.cpp
     src/thread.cpp
     include/libretro.h

@@ -40,6 +40,16 @@ namespace eka2l1::libretro {
         // however good the rest of the core is.
         std::size_t device_count() const;
 
+        // Install a device from a firmware dump if none is installed and one is
+        // lying in the directory the core looks in. A core cannot run an
+        // installation wizard; this is the whole of what it can do instead.
+        bool install_device_if_needed(const std::string &firmware_dir);
+
+        // A title: a package to install and launch, or a shortcut naming
+        // something already installed. See CONTENT_MODEL.md for why those two
+        // and not a path to "the game".
+        bool load_content(const std::string &path);
+
         // Start the emulator's own two threads: one running the Symbian OS
         // loop, one processing graphics commands. Neither is frame-stepped -
         // EKA2L1 has no "run one frame" call - so retro_run does not drive
@@ -60,6 +70,18 @@ namespace eka2l1::libretro {
         drivers::emu_window_libretro *window() { return window_.get(); }
 
     private:
+        bool install_package_and_launch(const std::string &path);
+        bool launch_uid(std::uint32_t uid);
+
+        // What was installed from where, so the same file is not installed
+        // again on every launch: a package's UID cannot be read without
+        // installing it, so the answer is remembered rather than asked for.
+        std::string index_path() const;
+        std::uint32_t remembered_uid(const std::string &path) const;
+        void remember_uid(const std::string &path, std::uint32_t uid);
+
+        std::string data_root_;
+
         void graphics_thread_main(std::function<unsigned int()> framebuffer_getter);
         void os_thread_main();
 
