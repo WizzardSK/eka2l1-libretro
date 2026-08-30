@@ -7,10 +7,15 @@
 
 add_library(eka2l1_libretro SHARED
     src/main.cpp
-    include/libretro.h)
+    src/state.cpp
+    include/libretro.h
+    include/libretro_state.h)
 
 target_include_directories(eka2l1_libretro PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/include")
+
+# GIT_BRANCH / GIT_COMMIT_HASH and the rest come from the generated headers the
+# emulator libraries already carry.
 
 # The same set the Qt frontend links, minus Qt itself.
 target_link_libraries(eka2l1_libretro PRIVATE
