@@ -1,0 +1,47 @@
+# The libretro core, built for arm64 Linux - the architecture the devices this
+# is aimed at actually use, and the one upstream CI does not cover.
+name: libretro core
+
+on:
+  push:
+    branches: [libretro-frontend]
+  workflow_dispatch:
+
+jobs:
+  linux-arm64:
+    name: Linux arm64 (libretro)
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 240
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get -y install build-essential ninja-build libc6-dev \
+            libgtk-3-dev libpulse-dev libasound2-dev libsdl2-dev
+
+      - name: Configure
+        run: |
+          cmake -B build -G Ninja -DCI=ON -DCMAKE_BUILD_TYPE=Release \
+            -DEKA2L1_BUILD_LIBRETRO=ON \
+            -DEKA2L1_SCRIPTING_LUA=OFF
+
+      - name: Build the core
+        run: cmake --build build --parallel 4 --target eka2l1_libretro
+
+      - name: What came out
+        run: |
+          ls -la build/bin/eka2l1_libretro.so
+          file build/bin/eka2l1_libretro.so
+          echo "--- exported entry points"
+          nm -D --defined-only build/bin/eka2l1_libretro.so | grep -c " T retro_" || true
+          nm -D --defined-only build/bin/eka2l1_libretro.so | grep " T retro_" | head -20
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eka2l1_libretro-linux-arm64
+          path: build/bin/eka2l1_libretro.so
