@@ -332,6 +332,17 @@ else()
                 "${FFMPEG_ARM64_LIB_DIR}/libavutil.a"
                 "${FFMPEG_ARM64_LIB_DIR}/libswresample.a"
                 "z" "-framework CoreVideo" "iconv")
+    elseif (UNIX AND NOT APPLE AND NOT ANDROID AND NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|amd64|AMD64)$")
+        # The submodule ships linux/x86_64 only, so a Linux host of any other
+        # architecture links archives it cannot read: "Relocations in generic ELF
+        # (EM: 62) ... file in wrong format", at the very end of the build.
+        # A distribution's ffmpeg is not a drop-in either - the bundled headers
+        # are ffmpeg 5 (libavcodec 59) and the player code uses the channel API
+        # that 6.0 removed - so build without it here, the way iOS does by
+        # default, until someone produces the arm64 set the way
+        # macos_arm64-build.sh does for Apple Silicon.
+        message(STATUS "No prebuilt ffmpeg for ${CMAKE_SYSTEM_PROCESSOR}: building without video playback.")
+        set(EKA2L1_HAVE_FFMPEG OFF CACHE INTERNAL "FFmpeg is available for this build" FORCE)
     else()
         add_subdirectory(ffmpeg)
         if (APPLE)
