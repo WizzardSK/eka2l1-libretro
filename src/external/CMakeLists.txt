@@ -477,11 +477,17 @@ add_definitions(-DFT_CONFIG_OPTION_SUBPIXEL_RENDERING)
 set(FT_DISABLE_HARFBUZZ ON CACHE BOOL "" FORCE)
 set(FT_ENABLE_ERROR_STRINGS ON CACHE BOOL "" FORCE)
 
-if (EKA2L1_IOS)
+if (EKA2L1_IOS OR EKA2L1_BUILD_LIBRETRO)
     # freetype's CMake autoprobe would otherwise pick up Homebrew's macOS
     # libpng / zlib / bzip2 / brotli, which link as macOS dylibs and fail
     # the iOS link step. The Symbian content we render through freetype
     # does not need these compression backends.
+    #
+    # A libretro core wants the same thing for a different reason: it is a
+    # shared object loaded by somebody else's process, and every system library
+    # it picks up has to exist there too. Building on Debian and loading in a
+    # Flatpak already fails on exactly this - the core asked for libbz2.so.1.0,
+    # the Debian SONAME, and the Flatpak runtime carries libbz2.so.1.
     set(FT_DISABLE_PNG ON CACHE BOOL "" FORCE)
     set(FT_DISABLE_ZLIB ON CACHE BOOL "" FORCE)
     set(FT_DISABLE_BZIP2 ON CACHE BOOL "" FORCE)
