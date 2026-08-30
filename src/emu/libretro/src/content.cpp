@@ -16,6 +16,7 @@
 #include <system/devices.h>
 #include <system/installation/firmware.h>
 #include <system/installation/rpkg.h>
+#include <utils/apacmd.h>
 
 #include <algorithm>
 #include <filesystem>

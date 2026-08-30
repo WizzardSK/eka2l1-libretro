@@ -26,6 +26,7 @@ target_link_libraries(eka2l1_libretro PRIVATE
     drivers
     epoc
     epocservs
+    epocutils
     epockern
     epocpkg
     gdbstub
