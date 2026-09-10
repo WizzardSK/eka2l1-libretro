@@ -434,7 +434,9 @@ set (TSF_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR} CACHE INTERNAL "TSF include path")
 
 # SDL2
 # Can't believe in 2022 the official CMake can't still ship a FindSDL2 with the program...
-if (NOT ANDROID AND NOT EKA2L1_IOS)
+# The libretro core uses none of it (the frontend owns the window, the pad and
+# the rumble), so it does not have to be installed to configure that build.
+if (NOT ANDROID AND NOT EKA2L1_IOS AND NOT EKA2L1_BUILD_LIBRETRO)
     set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/sdl2-cmake-scripts")
 
     if(APPLE)

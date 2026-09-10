@@ -41,7 +41,7 @@ jobs:
             apt-get update -qq
             DEBIAN_FRONTEND=noninteractive apt-get install -yqq \
               build-essential cmake ninja-build git ca-certificates \
-              libsdl2-dev libgtk-3-dev libpulse-dev libasound2-dev >/dev/null
+              libgtk-3-dev libpulse-dev libasound2-dev >/dev/null
             git config --global --add safe.directory "*"
             cmake -DCMAKE_BUILD_TYPE=Release \
               -G Ninja -DCI=ON -DEKA2L1_BUILD_LIBRETRO=ON -DEKA2L1_SCRIPTING_LUA=OFF \

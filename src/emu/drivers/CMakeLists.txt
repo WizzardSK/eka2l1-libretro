@@ -161,14 +161,22 @@ elseif (EKA2L1_IOS)
         src/sensor/backend/ios/sensor_ios.mm)
 else()
     target_sources(drivers PRIVATE
-        include/drivers/input/backend/emu_controller_sdl2.h
-        include/drivers/hwrm/backend/vibration_sdl2.h
-        src/graphics/emu_window.cpp
-        src/input/backend/emu_controller_sdl2.cpp
-        src/input/emu_controller.cpp
-        src/hwrm/backend/vibration_sdl2.cpp
-        src/sdl2_scoping.cpp
-        src/sdl2_scoping.h)
+        src/graphics/emu_window.cpp)
+
+    # A libretro core is handed its gamepad and its rumble by the frontend, so
+    # the SDL2 backends are dead code there - and SDL2 with them, which a core
+    # shipped through the Core Downloader would otherwise carry as a runtime
+    # dependency. Left out the same way the iOS build leaves them out.
+    if (NOT EKA2L1_BUILD_LIBRETRO)
+        target_sources(drivers PRIVATE
+            include/drivers/input/backend/emu_controller_sdl2.h
+            include/drivers/hwrm/backend/vibration_sdl2.h
+            src/input/backend/emu_controller_sdl2.cpp
+            src/input/emu_controller.cpp
+            src/hwrm/backend/vibration_sdl2.cpp
+            src/sdl2_scoping.cpp
+            src/sdl2_scoping.h)
+    endif()
 
     # The desktop camera rides on Qt Multimedia, looked up in src/emu.
     if (Qt6Multimedia_FOUND)
@@ -288,7 +296,7 @@ if (EKA2L1_BUILD_LIBRETRO)
 endif()
 if (ANDROID)
     target_link_libraries(drivers PRIVATE android)
-elseif (NOT EKA2L1_IOS)
+elseif (NOT EKA2L1_IOS AND NOT EKA2L1_BUILD_LIBRETRO)
     target_link_libraries(drivers PRIVATE SDL2)
 endif()
 
