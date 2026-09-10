@@ -1,0 +1,60 @@
+# Preflight for .gitlab-ci.yml — replays what the Libretro buildbot would run,
+# on GitHub runners, because the buildbot's images live behind
+# git.libretro.com:5050 and are not reachable from here. Both jobs use the same
+# ubuntu:22.04 container, package list and CMake arguments as the recipe.
+name: buildbot preflight
+
+on:
+  push:
+    branches: [libretro]
+    paths:
+      - '.gitlab-ci.yml'
+      - '.github/workflows/zz-buildbot-preflight.yml'
+  workflow_dispatch:
+
+jobs:
+  recipe:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x64
+            runner: ubuntu-latest
+            arch: x86_64
+          - name: linux-aarch64
+            runner: ubuntu-24.04-arm
+            arch: aarch64
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 240
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Build the way the recipe does
+        run: |
+          docker run --rm -v "$PWD":/src -w /src ubuntu:22.04 bash -c '
+            set -e
+            export NUMPROC=$(nproc)
+            apt-get update -qq
+            DEBIAN_FRONTEND=noninteractive apt-get install -yqq \
+              build-essential cmake ninja-build git ca-certificates \
+              libsdl2-dev libgtk-3-dev libpulse-dev libasound2-dev >/dev/null
+            git config --global --add safe.directory "*"
+            cmake -DCMAKE_BUILD_TYPE=Release \
+              -G Ninja -DCI=ON -DEKA2L1_BUILD_LIBRETRO=ON -DEKA2L1_SCRIPTING_LUA=OFF \
+              . -Bbuild/linux-${{ matrix.arch }}
+            cmake --build build/linux-${{ matrix.arch }} --target eka2l1_libretro \
+              --config Release -- -j $NUMPROC
+            mv build/linux-${{ matrix.arch }}/bin/eka2l1_libretro.so eka2l1_libretro.so
+            strip --strip-unneeded eka2l1_libretro.so
+          '
+
+      - name: What came out
+        run: |
+          ls -la eka2l1_libretro.so
+          file eka2l1_libretro.so
+          nm -D --defined-only eka2l1_libretro.so | grep -c " T retro_"
+          readelf -d eka2l1_libretro.so | grep NEEDED

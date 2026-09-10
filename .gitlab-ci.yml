@@ -1,0 +1,65 @@
+# DESCRIPTION: GitLab CI/CD for libRetro (NOT FOR GitLab-proper)
+#
+# This recipe is consumed by the Libretro buildbot so the EKA2L1 core can be
+# distributed through RetroArch's Online Updater > Core Downloader.
+#
+# Only the two Linux targets are here for now. The core is C++20 (see the top
+# of CMakeLists.txt), which rules out the buildbot's own xenial-gcc9 and focal
+# images and its MSVC 19.28 runner, so both jobs run on ubuntu:22.04 and pull
+# their own toolchain, the way other C++20 cores do. Windows (MXE) and the
+# Apple targets need the deps EKA2L1 vendors per-platform and are left for
+# later; Android has a full Gradle app upstream and would want its own recipe.
+
+# Core definitions
+.core-defs:
+  variables:
+    CORENAME: eka2l1
+    # The libretro core, without the Lua runtime (native patches only) and
+    # without the desktop frontends. CMake writes it to <build>/bin.
+    CORE_ARGS: -G Ninja -DCI=ON -DEKA2L1_BUILD_LIBRETRO=ON -DEKA2L1_SCRIPTING_LUA=OFF
+    EXTRA_PATH: bin
+    # EKA2L1 keeps its third-party code in submodules.
+    GIT_SUBMODULE_STRATEGY: recursive
+
+# The buildbot's images predate C++20, so both jobs bring their own compiler.
+# Overriding before_script drops the template's NUMPROC, hence the re-export.
+.core-deps:
+  image: ubuntu:22.04
+  before_script:
+    - export NUMPROC=$(($(nproc)/5))
+    - export NUMPROC=$((NUMPROC > 0 ? NUMPROC : 1))
+    - apt-get update -qq
+    - DEBIAN_FRONTEND=noninteractive apt-get install -yqq
+        build-essential cmake ninja-build git ca-certificates
+        libsdl2-dev libgtk-3-dev libpulse-dev libasound2-dev
+
+include:
+  ################################## DESKTOP ##################################
+  # Linux
+  - project: 'libretro-infrastructure/ci-templates'
+    file: '/linux-cmake.yml'
+
+# Stages for building
+stages:
+  - build-prepare
+  - build-shared
+  - build-static
+
+##############################################################################
+#################################### STAGES ##################################
+##############################################################################
+#
+################################### DESKTOP ##################################
+# Linux 64-bit
+libretro-build-linux-x64:
+  extends:
+    - .libretro-linux-cmake-x86_64
+    - .core-deps
+    - .core-defs
+
+# Linux aarch64 — the architecture the devices this core is aimed at use
+libretro-build-linux-aarch64:
+  extends:
+    - .libretro-linux-cmake-aarch64
+    - .core-deps
+    - .core-defs

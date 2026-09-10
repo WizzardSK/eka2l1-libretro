@@ -4,7 +4,7 @@ name: libretro core
 
 on:
   push:
-    branches: [libretro-frontend]
+    branches: [libretro]
   workflow_dispatch:
 
 jobs:
