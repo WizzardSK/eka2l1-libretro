@@ -358,16 +358,29 @@ else()
                 "${FFMPEG_ARM64_LIB_DIR}/libavutil.a"
                 "${FFMPEG_ARM64_LIB_DIR}/libswresample.a"
                 "z" "-framework CoreVideo" "iconv")
-    elseif (UNIX AND NOT APPLE AND NOT ANDROID AND NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|amd64|AMD64)$")
+    elseif (UNIX AND NOT APPLE AND NOT ANDROID AND
+            (NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|amd64|AMD64)$" OR EKA2L1_BUILD_LIBRETRO))
+        # Two ways the prebuilt Linux archives cannot be used:
+        #
         # The submodule ships linux/x86_64 only, so a Linux host of any other
         # architecture links archives it cannot read: "Relocations in generic ELF
         # (EM: 62) ... file in wrong format", at the very end of the build.
+        #
+        # And they are not built with -fPIC, which an executable does not care
+        # about but a shared library does, so on x86_64 the libretro core fails
+        # to link: "relocation R_X86_64_PC32 against symbol `ff_M24A' can not be
+        # used when making a shared object".
+        #
         # A distribution's ffmpeg is not a drop-in either - the bundled headers
         # are ffmpeg 5 (libavcodec 59) and the player code uses the channel API
         # that 6.0 removed - so build without it here, the way iOS does by
         # default, until someone produces the arm64 set the way
         # macos_arm64-build.sh does for Apple Silicon.
-        message(STATUS "No prebuilt ffmpeg for ${CMAKE_SYSTEM_PROCESSOR}: building without video playback.")
+        if (EKA2L1_BUILD_LIBRETRO AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|amd64|AMD64)$")
+            message(STATUS "Prebuilt ffmpeg is not position-independent: the libretro core builds without video playback.")
+        else()
+            message(STATUS "No prebuilt ffmpeg for ${CMAKE_SYSTEM_PROCESSOR}: building without video playback.")
+        endif()
         set(EKA2L1_HAVE_FFMPEG OFF CACHE INTERNAL "FFmpeg is available for this build" FORCE)
     else()
         add_subdirectory(ffmpeg)
