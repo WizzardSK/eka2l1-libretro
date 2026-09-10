@@ -23,7 +23,7 @@
 #include <drivers/hwrm/backend/vibration_jdk.h>
 #elif EKA2L1_PLATFORM(IOS)
 #include <drivers/hwrm/backend/vibration_ios.h>
-#elif !EKA2L1_PLATFORM(IOS)
+#elif !defined(EKA2L1_LIBRETRO)
 #include <drivers/hwrm/backend/vibration_sdl2.h>
 #endif
 
@@ -33,6 +33,9 @@ namespace eka2l1::drivers::hwrm {
         return std::make_unique<vibrator_jdk>();
 #elif EKA2L1_PLATFORM(IOS)
         return std::make_unique<vibrator_ios>();
+#elif defined(EKA2L1_LIBRETRO)
+        // Rumble belongs to the frontend here; nothing to vibrate on our own.
+        return std::make_unique<vibrator_null>();
 #else
         return std::make_unique<vibrator_sdl2>();
 #endif
