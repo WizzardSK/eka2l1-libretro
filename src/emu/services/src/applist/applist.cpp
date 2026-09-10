@@ -690,6 +690,20 @@ namespace eka2l1 {
         ctx.complete(0);
     }
 
+    void applist_server::app_count(service::ipc_context &ctx) {
+        // Apparc answers with the count as the completion code, and leaves control panel
+        // items out of the application list.
+        std::int32_t count = 0;
+
+        for (const auto &reg : regs) {
+            if (!(reg.caps.flags & apa_capability::control_panel_item)) {
+                count++;
+            }
+        }
+
+        ctx.complete(count);
+    }
+
     void applist_server::get_app_info(service::ipc_context &ctx) {
         const epoc::uid app_uid = *ctx.get_argument_value<epoc::uid>(0);
         apa_app_registry *reg = get_registration(app_uid);
@@ -1317,6 +1331,10 @@ namespace eka2l1 {
                 server<applist_server>()->app_language(*ctx);
                 break;
 
+            case applist_request_app_count:
+                server<applist_server>()->app_count(*ctx);
+                break;
+
             case applist_request_rule_based_launching:
                 server<applist_server>()->is_accepted_to_run(*ctx);
                 break;
@@ -1385,6 +1403,13 @@ namespace eka2l1 {
                 get_next_app(*ctx);
                 break;
 
+            // Registries are scanned before any guest process runs, so the first scan is
+            // always complete already and the observer is satisfied as it registers.
+            case applist_request_register_list_population_complete_observer:
+            case applist_request_cancel_list_population_complete_observer:
+                ctx->complete(epoc::error_none);
+                break;
+
             default:
                 LOG_ERROR(SERVICE_APPLIST, "Unimplemented applist opcode 0x{:X}", ctx->msg->function);
                 break;
@@ -1427,7 +1452,8 @@ namespace eka2l1 {
     static constexpr std::uint8_t ENVIRONMENT_SLOT_MAIN = 1;
 
     bool applist_server::launch_app(const std::u16string &exe_path, const std::u16string &cmd, kernel::uid *thread_id,
-                                    kernel::process *requester, const epoc::uid known_uid, std::function<void(kernel::process*)> app_exit_callback) {
+                                    kernel::process *requester, const epoc::uid known_uid, std::function<void(kernel::process*)> app_exit_callback,
+                                    const std::string *environment_main) {
         static constexpr std::size_t MINIMAL_LAUNCH_STACK_SIZE = 0x10000;
         static constexpr std::size_t MINIMAL_LAUNCH_STACK_SIZE_S3 = 0x80000;
 
@@ -1443,7 +1469,10 @@ namespace eka2l1 {
             return false;
         }
 
-        if (legacy_level() < APA_LEGACY_LEVEL_MORDEN) {
+        // Symbian 9.1 reads the command line from process environment slot 1.
+        if (environment_main && !environment_main->empty()) {
+            pr->set_arg_slot(ENVIRONMENT_SLOT_MAIN, reinterpret_cast<std::uint8_t *>(
+                const_cast<char *>(environment_main->data())), environment_main->length());
         }
 
         if (thread_id)
@@ -1541,8 +1570,21 @@ namespace eka2l1 {
         std::u16string executable_to_run;
         registry.get_launch_parameter(executable_to_run, parameter);
 
-        std::u16string apacmddat = parameter.to_string(legacy_level() < APA_LEGACY_LEVEL_MORDEN);
-        return launch_app(executable_to_run, apacmddat, thread_id, nullptr, registry.mandatory_info.uid, app_exit_callback);
+        const bool oldarch = (legacy_level() < APA_LEGACY_LEVEL_MORDEN);
+
+        std::u16string apacmddat = parameter.to_string(oldarch);
+        std::string environment_main;
+
+        if (!oldarch && (kern->get_epoc_version() == epocver::epoc91)) {
+            epoc::apa::command_line environment_parameter = parameter;
+            environment_parameter.launch_cmd_ = epoc::apa::command_run;
+            environment_parameter.document_name_.clear();
+
+            environment_main = environment_parameter.to_buffer();
+        }
+
+        return launch_app(executable_to_run, apacmddat, thread_id, nullptr, registry.mandatory_info.uid, app_exit_callback,
+            environment_main.empty() ? nullptr : &environment_main);
     }
 
     std::optional<apa_app_masked_icon_bitmap> applist_server::get_icon(apa_app_registry &registry, const std::int8_t index) {

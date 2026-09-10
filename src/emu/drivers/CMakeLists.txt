@@ -76,6 +76,7 @@ add_library(drivers
         include/drivers/audio/backend/dsp_shared.h
         include/drivers/audio/backend/player_shared.h
         include/drivers/camera/camera_collection.h
+        include/drivers/camera/camera_pixel.h
         include/drivers/hwrm/backend/vibration_null.h
         include/drivers/hwrm/vibration.h
         include/drivers/graphics/buffer.h
@@ -102,6 +103,7 @@ add_library(drivers
         src/audio/backend/dsp_shared.cpp
         src/audio/backend/player_shared.cpp
         src/camera/camera_collection.cpp
+        src/camera/camera_pixel.cpp
         src/hwrm/backend/vibration_null.cpp
         src/hwrm/vibration.cpp
         src/input/common.cpp
@@ -146,6 +148,7 @@ elseif (EKA2L1_IOS)
         src/camera/backend/ios/camera_pixel_ios.mm
         src/camera/backend/ios/camera_simulator.mm
         src/sensor/backend/ios/sensor_ios.h
+        include/drivers/sensor/backend/ios/controller_motion.h
         src/sensor/backend/ios/sensor_ios.mm)
 else()
     target_sources(drivers PRIVATE
@@ -157,6 +160,17 @@ else()
         src/hwrm/backend/vibration_sdl2.cpp
         src/sdl2_scoping.cpp
         src/sdl2_scoping.h)
+
+    # The desktop camera rides on Qt Multimedia, looked up in src/emu.
+    if (Qt6Multimedia_FOUND)
+        target_sources(drivers PRIVATE
+            include/drivers/camera/backend/qt/camera_qt.h
+            src/camera/backend/qt/camera_qt.cpp)
+
+        target_link_libraries(drivers PRIVATE Qt6::Multimedia)
+        target_compile_definitions(drivers PRIVATE EKA2L1_HAVE_QT_CAMERA=1)
+        set_target_properties(drivers PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    endif()
 endif()
 
 if(WIN32)
@@ -179,6 +193,7 @@ elseif (EKA2L1_IOS)
         src/graphics/backend/context_eagl.mm
         include/drivers/graphics/backend/emu_window_ios.h
         src/graphics/backend/emu_window_ios.mm
+        src/graphics/backend/ios_external_display.mm
         src/ui/input_dialog_ios.mm
     )
 elseif(APPLE)
@@ -244,6 +259,7 @@ if (EKA2L1_IOS)
         "-framework CoreAudio"
         "-framework CoreHaptics"
         "-framework CoreMotion"
+        "-framework GameController"
         "-framework CoreMedia"
         "-framework CoreVideo"
         "-framework CoreGraphics"

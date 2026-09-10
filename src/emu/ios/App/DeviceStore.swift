@@ -38,10 +38,40 @@ final class DeviceStore: ObservableObject {
         apps = currentIndex >= 0 ? EKA2L1Bridge.shared.rescanApps() : []
     }
 
-    // Titles only (a rename in Settings): the device set and booted device are
+    // Pull-to-refresh on the home grid: re-read the device titles and re-scan
+    // the booted device's registry, picking up apps that appeared behind the
+    // frontend's back (a package dropped in through the Files app, a guest-side
+    // installer). The scan stays on the main actor — rescanApps only try-locks
+    // the emulator session and hands back its cached list rather than blocking
+    // (see IosEmulator.mm) — so the async signature exists purely to keep the
+    // refresh control's spinner up until the new list is published.
+    func refreshApps() async {
+        guard !busy else { return }
+        let started = Date()
+        reloadDevices()
+        reloadApps()
+        // A scan that lost the session lock returns instantly; hold the spinner
+        // for a beat so the gesture still reads as "refreshed" instead of
+        // snapping back before the user let go.
+        let remaining = 0.4 - Date().timeIntervalSince(started)
+        if remaining > 0 {
+            try? await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
+        }
+    }
+
+    // Titles only (after a rename): the device set and booted device are
     // unchanged, so neither a reboot nor an app re-scan is needed.
     func reloadDevices() {
         devices = EKA2L1Bridge.shared.installedDevices()
+    }
+
+    func renameDevice(_ device: EKA2L1DeviceItem, to name: String) -> Bool {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !busy, !trimmed.isEmpty,
+              let current = self.device(withFirmwareCode: device.firmwareCode) else { return false }
+        guard EKA2L1Bridge.shared.renameDevice(at: current.index, to: trimmed) else { return false }
+        reloadDevices()
+        return true
     }
 
     // Run a blocking emulator operation off the main thread with the busy flag

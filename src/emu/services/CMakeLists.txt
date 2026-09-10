@@ -99,6 +99,7 @@ add_library(epocservs
         include/services/msv/msv.h
         include/services/msv/store.h
         include/services/notifier/notifier.h
+        include/services/notifier/bluetooth.h
         include/services/notifier/queries.h
         include/services/posix/op.h
         include/services/posix/posix.h
@@ -252,6 +253,7 @@ add_library(epocservs
         src/msv/registry.cpp
         src/msv/store.cpp
         src/notifier/notifier.cpp
+        src/notifier/bluetooth.cpp
         src/notifier/queries.cpp
         src/posix/posix.cpp
         src/redir/redir.cpp
@@ -324,6 +326,7 @@ add_library(epocservs
         src/window/io.cpp
         src/window/scheduler.cpp
         src/window/screen.cpp
+        src/window/surface.cpp
         src/window/util.cpp
         src/window/window.cpp)
 
@@ -360,4 +363,8 @@ target_link_libraries(epocservs PRIVATE
 
 if (WIN32)
         target_link_libraries(epocservs PRIVATE Ws2_32.lib)
+endif()
+
+if (APPLE)
+        target_sources(epocservs PRIVATE src/bluetooth/protocols/bonjour.cpp)
 endif()

@@ -17,9 +17,9 @@
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>26.7.0</string>
+    <string>26.9.1</string>
     <key>CFBundleVersion</key>
-    <string>260700</string>
+    <string>260952</string>
     <key>CFBundleIcons</key>
     <dict>
         <key>CFBundlePrimaryIcon</key>
@@ -51,6 +51,25 @@
          TestFlight build skips the manual export-compliance questionnaire. -->
     <key>ITSAppUsesNonExemptEncryption</key>
     <false/>
+    <key>UIApplicationSceneManifest</key>
+    <dict>
+        <key>UIApplicationSupportsMultipleScenes</key>
+        <false/>
+        <key>UISceneConfigurations</key>
+        <dict>
+            <key>UIWindowSceneSessionRoleExternalDisplayNonInteractive</key>
+            <array>
+                <dict>
+                    <key>UISceneConfigurationName</key>
+                    <string>Game Display</string>
+                    <key>UISceneClassName</key>
+                    <string>UIWindowScene</string>
+                    <key>UISceneDelegateClassName</key>
+                    <string>$(PRODUCT_MODULE_NAME).ExternalDisplaySceneDelegate</string>
+                </dict>
+            </array>
+        </dict>
+    </dict>
     <key>UILaunchScreen</key>
     <dict/>
     <key>NSPhotoLibraryAddUsageDescription</key>
@@ -217,11 +236,40 @@
                 </array>
             </dict>
         </dict>
+        <!-- Same reasoning as 7z above: com.rarlab.rar-archive is the identifier
+             every reader of RAR archives already uses. -->
+        <dict>
+            <key>UTTypeIdentifier</key>
+            <string>com.rarlab.rar-archive</string>
+            <key>UTTypeDescription</key>
+            <string>RAR Archive</string>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.data</string>
+                <string>public.archive</string>
+            </array>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array>
+                    <string>rar</string>
+                </array>
+                <key>public.mime-type</key>
+                <array>
+                    <string>application/x-rar-compressed</string>
+                    <string>application/vnd.rar</string>
+                </array>
+            </dict>
+        </dict>
     </array>
     <key>NSCameraUsageDescription</key>
     <string>Symbian apps running in the emulator can use the camera for their viewfinder and photo capture features.</string>
     <key>NSMicrophoneUsageDescription</key>
     <string>Symbian apps running in the emulator can use the microphone for recording and voice features.</string>
+    <key>NSBonjourServices</key>
+    <array>
+        <string>_eka2l1._udp</string>
+    </array>
     <key>NSLocalNetworkUsageDescription</key>
     <string>Bluetooth Netplay emulates Symbian Bluetooth multiplayer over your local network to find and connect to other EKA2L1 players.</string>
 </dict>

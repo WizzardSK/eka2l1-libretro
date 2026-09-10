@@ -20,9 +20,72 @@
 #include <services/bluetooth/protocols/btmidman_inet.h>
 #include <services/bluetooth/protocols/common_inet.h>
 #include <common/log.h>
+#ifdef __APPLE__
+#include <services/bluetooth/protocols/bonjour.h>
+#endif
 
 namespace eka2l1::epoc::bt {
+#ifdef __APPLE__
+    void midman_inet::sync_bonjour_friends() {
+        if (!bonjour_) return;
+        const auto peers = bonjour_->peers();
+        std::vector<friend_info> discovered;
+        for (const auto &peer : peers) {
+            friend_info info{};
+            epoc::internet::sinet6_address endpoint{};
+            endpoint.family_ = epoc::internet::INET6_ADDRESS_FAMILY;
+            endpoint.port_ = peer.endpoint.port_;
+            endpoint.address_32x4()[2] = 0xFFFF0000;
+            endpoint.address_32x4()[3] = htonl(*reinterpret_cast<const std::uint32_t *>(peer.endpoint.user_data_));
+            info.real_addr_ = endpoint;
+            info.dvc_addr_ = peer.address;
+            discovered.push_back(info);
+        }
+
+        const std::lock_guard<std::mutex> guard(friends_lock_);
+        for (auto &friend_entry : friends_) {
+            const auto found = std::find_if(discovered.begin(), discovered.end(), [&](const friend_info &peer) {
+                return std::memcmp(&peer.real_addr_, &friend_entry.real_addr_, sizeof(epoc::socket::saddress)) == 0
+                    && std::memcmp(peer.dvc_addr_.addr_, friend_entry.dvc_addr_.addr_, 6) == 0;
+            });
+            if (found == discovered.end()) {
+                friend_device_address_mapping_.erase(friend_entry.dvc_addr_);
+                friend_entry.real_addr_.family_ = 0;
+            }
+        }
+        for (const auto &peer : discovered) {
+            auto found = std::find_if(friends_.begin(), friends_.end(), [&](const friend_info &entry) {
+                return std::memcmp(&peer.real_addr_, &entry.real_addr_, sizeof(epoc::socket::saddress)) == 0;
+            });
+            if (found == friends_.end()) {
+                found = std::find_if(friends_.begin(), friends_.end(), [](const friend_info &entry) {
+                    return entry.real_addr_.family_ == 0;
+                });
+                if (found == friends_.end()) {
+                    if (friends_.size() >= MAX_INET_DEVICE_AROUND) break;
+                    friends_.push_back(peer);
+                    found = std::prev(friends_.end());
+                } else {
+                    *found = peer;
+                }
+            }
+            const auto index = static_cast<std::uint32_t>(found - friends_.begin());
+            friend_device_address_mapping_[found->dvc_addr_] = index;
+            if (current_active_observer_ && !found->refreshed_) {
+                found->refreshed_ = true;
+                current_active_observer_->on_stranger_call(found->real_addr_, index);
+            }
+        }
+        friend_info_cached_ = true;
+    }
+#endif
+
     void midman_inet::setup_lan_discovery() {
+#ifdef __APPLE__
+        bonjour_ = std::make_unique<bonjour_discovery>(random_device_addr_, password_,
+            static_cast<std::uint16_t>(port_), [this]() { sync_bonjour_friends(); });
+        return;
+#else
         if (!epoc::internet::retrieve_local_ip_info(server_addr_, &local_addr_)) {
             LOG_ERROR(SERVICE_BLUETOOTH, "Can't find local LAN interface for BT netplay!");
             return;
@@ -33,34 +96,47 @@ namespace eka2l1::epoc::bt {
         local_addr_.port_ = static_cast<std::uint16_t>(LAN_DISCOVERY_PORT);
         lan_discovery_call_listener_socket_ = loop->resource<uvw::udp_handle>();
 
-        libuv::default_looper->one_shot([this]() {
-            sockaddr_in6 addr_bind;
-            std::memset(&addr_bind, 0, sizeof(sockaddr_in6));
-            addr_bind.sin6_family = AF_INET;
-            addr_bind.sin6_port = htons(static_cast<std::uint16_t>(LAN_DISCOVERY_PORT));
+        sockaddr_in6 addr_bind;
+        std::memset(&addr_bind, 0, sizeof(sockaddr_in6));
+        addr_bind.sin6_family = AF_INET;
+        addr_bind.sin6_port = htons(static_cast<std::uint16_t>(LAN_DISCOVERY_PORT));
 
-            lan_discovery_call_listener_socket_->bind(*reinterpret_cast<sockaddr*>(&addr_bind));
-            lan_discovery_call_listener_socket_->on<uvw::error_event>([this](const uvw::error_event &event, uvw::udp_handle &handle) {
-                handle_lan_discovery_receive(nullptr, event.code(), nullptr);
-            });
+        if (const int bind_err = lan_discovery_call_listener_socket_->bind(*reinterpret_cast<sockaddr*>(&addr_bind)); bind_err < 0) {
+            LOG_ERROR(SERVICE_BLUETOOTH, "Can't bind the LAN discovery socket to port {}! Libuv error code={}", LAN_DISCOVERY_PORT, bind_err);
+        }
+        lan_discovery_call_listener_socket_->on<uvw::error_event>([](const uvw::error_event &event, uvw::udp_handle &handle) {
+            LOG_ERROR(SERVICE_BLUETOOTH, "Error on the LAN discovery listener socket! Libuv error code={}", event.code());
 
-            lan_discovery_call_listener_socket_->on<uvw::udp_data_event>([this](const uvw::udp_data_event &event, uvw::udp_handle &handle) {
-                std::optional<sockaddr_in6> sender_ced = libuv::from_ip_string(event.sender.ip.data(), event.sender.port);
-                if (!sender_ced.has_value()) {
-                    LOG_ERROR(SERVICE_BLUETOOTH, "Invalid sender address passed to callback!");
-                    return;
-                }
-                handle_lan_discovery_receive(event.data.get(), event.length, reinterpret_cast<sockaddr*>(&sender_ced.value()));
-            });
-
-            lan_discovery_call_listener_socket_->recv();
+            if (is_socket_dead_error(event.code())) {
+                handle.stop();
+            }
         });
+
+        lan_discovery_call_listener_socket_->on<uvw::udp_data_event>([this](const uvw::udp_data_event &event, uvw::udp_handle &handle) {
+            std::optional<sockaddr_in6> sender_ced = libuv::from_ip_string(event.sender.ip.data(), event.sender.port);
+            if (!sender_ced.has_value()) {
+                LOG_ERROR(SERVICE_BLUETOOTH, "Invalid sender address passed to callback!");
+                return;
+            }
+            handle_lan_discovery_receive(event.data.get(), event.length, reinterpret_cast<sockaddr*>(&sender_ced.value()));
+        });
+
+        lan_discovery_call_listener_socket_->recv();
+#endif
     }
 
     void midman_inet::handle_lan_discovery_receive(const char *buf, std::int64_t nread, const sockaddr *addr) {
-        const std::uint32_t LOCALHOST_ADDR = 0x100007F;
-        if ((memcmp(&(reinterpret_cast<const sockaddr_in*>(addr)->sin_addr), local_addr_.user_data_, 4) == 0) ||
-            (memcmp(&(reinterpret_cast<const sockaddr_in*>(addr)->sin_addr), &LOCALHOST_ADDR, 4) == 0)) {
+        // Broadcast datagrams come from the network, so they may be truncated or hostile.
+        if (!addr || !buf || (nread < 1)) {
+            return;
+        }
+
+        // saddress keeps IPv4 host-ordered, the datagram's sockaddr network-ordered.
+        const std::uint32_t LOCALHOST_ADDR = 0x7F000001;
+        const std::uint32_t sender_addr = ntohl(reinterpret_cast<const sockaddr_in *>(addr)->sin_addr.s_addr);
+
+        if ((sender_addr == *reinterpret_cast<const std::uint32_t *>(local_addr_.user_data_)) ||
+            (sender_addr == LOCALHOST_ADDR)) {
             return;
         }
 
@@ -70,9 +146,16 @@ namespace eka2l1::epoc::bt {
             add_lan_friend(addr);
         } else if (buf[0] == QUERY_OPCODE_GET_PLAYERS) {
             // Accept this discover call by sending back to the one waving at us!
-            if ((buf[1] == password_.length()) && (std::memcmp(password_.data(), buf + 2, buf[1]) == 0)) {
+            const std::int64_t password_length = (nread < 2) ? -1 : static_cast<std::uint8_t>(buf[1]);
+
+            if ((password_length < 0) || (nread < 2 + password_length)) {
+                LOG_ERROR(SERVICE_BLUETOOTH, "LAN discovery call is truncated (got {} bytes)", nread);
+                return;
+            }
+
+            if ((password_length == static_cast<std::int64_t>(password_.length())) && (std::memcmp(password_.data(), buf + 2, static_cast<std::size_t>(password_length)) == 0)) {
                 for (std::uint16_t i = 0; i < RETRY_LAN_DISCOVERY_TIME_MAX; i++) {
-                    lan_discovery_call_listener_socket_->send(*addr, &exist_opcode, 1);
+                    lan_discovery_call_listener_socket_->send(*addr, copy_control_packet(&exist_opcode, 1), 1);
                 }
             }
         }

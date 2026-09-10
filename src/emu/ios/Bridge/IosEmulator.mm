@@ -46,7 +46,10 @@
 #include <drivers/input/common.h>
 #include <drivers/itc.h>
 #include <drivers/hwrm/vibration.h>
+#include <drivers/hwrm/backend/vibration_ios.h>
+#include <drivers/camera/camera_collection.h>
 #include <drivers/sensor/sensor.h>
+#include <drivers/sensor/backend/ios/controller_motion.h>
 #include <services/window/screen.h>
 #include <kernel/kernel.h>
 #include <kernel/process.h>
@@ -55,6 +58,7 @@
 #include <loader/mif.h>
 #include <package/manager.h>
 #include <services/applist/applist.h>
+#include <services/bluetooth/btman.h>
 #include <services/fbs/bitmap.h>
 #include <services/fbs/fbs.h>
 #include <services/window/window.h>
@@ -391,9 +395,15 @@ namespace eka2l1::ios {
         // Main-thread readers must try_lock only: while a boot holds this
         // lock the graphics thread dispatch_syncs onto the main queue, so a
         // blocked main thread would deadlock the boot.
-        std::recursive_mutex session_mutex;
+        std::recursive_mutex &session_mutex;
+
+        explicit emulator(std::recursive_mutex &session_mutex)
+            : session_mutex(session_mutex) {
+        }
 
         std::mutex layer_mutex;
+        std::mutex display_geometry_mutex;
+        eka2l1::rect display_rect;
         std::condition_variable layer_cv;
         bool layer_dirty = false;
         void *pending_layer = nullptr;
@@ -685,11 +695,26 @@ namespace eka2l1::ios {
         // rot=270), unlike Symbian^3 (rot=0). Refreshing here tracks both
         // guest screen-mode switches and host rotations (a host rotation
         // re-attaches the surface, which re-presents even a static screen).
-        if (state->sensor_driver) {
+        {
             const eka2l1::epoc::config::screen_mode *natural_mode = scr->mode_info(0);
             const int panel_mount = natural_mode ? natural_mode->rotation : 0;
-            state->sensor_driver->set_motion_rotation(mode.rotation - panel_mount
-                + state->host_interface_rotation_deg.load(std::memory_order_relaxed));
+            const int picture_rotation = mode.rotation - panel_mount
+                + state->host_interface_rotation_deg.load(std::memory_order_relaxed);
+
+            if (state->sensor_driver) {
+                state->sensor_driver->set_motion_rotation(picture_rotation);
+                eka2l1::drivers::set_controller_motion_rotation(state->sensor_driver.get(),
+                    mode.rotation - panel_mount);
+            }
+
+            // A camera is bolted to the device body, so it needs the mirror of the
+            // accelerometer's angle for the host term: turning the phone counter-
+            // clockwise spins the scene clockwise inside the sensor buffer, while
+            // the interface counter-rotates the picture to stay upright for the
+            // viewer. The guest term keeps its sign -- an app that composes for a
+            // rotated panel already lays the frame out for it.
+            eka2l1::drivers::camera::set_frame_rotation(mode.rotation - panel_mount
+                - state->host_interface_rotation_deg.load(std::memory_order_relaxed));
         }
         eka2l1::rect src;
         src.size = mode.size;
@@ -720,6 +745,12 @@ namespace eka2l1::ios {
             dest.top.y = std::min(anchor_top, max_top);
         }
 
+        const eka2l1::rect external_crop = dest;
+        {
+            std::lock_guard<std::mutex> geometry_lock(state->display_geometry_mutex);
+            state->display_rect = external_crop;
+        }
+
         scr->set_native_scale_factor(state->graphics_driver.get(), scale, scale);
         scr->absolute_pos = dest.top;
 
@@ -741,6 +772,7 @@ namespace eka2l1::ios {
 
         builder.load_backup_state();
         state->present_status[slot] = -100;
+        state->window->external_display.enqueue_frame(external_crop, swapchain_size);
         builder.present(&state->present_status[slot]);
         eka2l1::drivers::command_list commands = builder.retrieve_command_list();
         state->graphics_driver->submit_command_list(commands);
@@ -830,6 +862,7 @@ namespace eka2l1::ios {
                                fatalDetails:(nullable NSString *)fatalDetails;
 // Synchronous launch body, run off the main thread by launchAppWithUID:completion:.
 - (BOOL)runLaunchAppWithUID:(uint32_t)uid;
+- (void)applyNetworkingSuspended:(BOOL)suspended;
 // Uninstall path for apps with no package registry (N-Gage game cards).
 - (BOOL)removeUnpackagedAppWithUID:(uint32_t)uid;
 // Post-uninstall cleanup for a registration the package did not own.
@@ -837,7 +870,10 @@ namespace eka2l1::ios {
 @end
 
 @implementation EKA2L1Emulator {
+    // Queued work must be able to lock before reading a possibly torn-down state.
+    std::recursive_mutex _sessionMutex;
     std::unique_ptr<eka2l1::ios::emulator> _state;
+    std::atomic<bool> _networkingSuspended;
     // Host pointer identity (UITouch address) → guest pointer number. The guest
     // event's ptr_num is a uint8_t indexed pointer slot on Symbian^3 (advanced
     // pointers), so raw UITouch identities must be mapped to small stable
@@ -858,12 +894,23 @@ namespace eka2l1::ios {
     return instance;
 }
 
+- (instancetype)init {
+    self = [super init];
+    if (self) {
+        _networkingSuspended = false;
+    }
+    return self;
+}
+
 - (BOOL)startWithDocumentsPath:(NSString *)documentsPath {
     if (_state && _state->running) {
         return YES;
     }
 
-    _state = std::make_unique<eka2l1::ios::emulator>();
+    {
+        std::lock_guard<std::recursive_mutex> session_lock(_sessionMutex);
+        _state = std::make_unique<eka2l1::ios::emulator>(_sessionMutex);
+    }
     _state->documents_root = documentsPath.UTF8String;
 
     // Build the sandbox layout up front so later steps can rely on it.
@@ -1146,12 +1193,10 @@ namespace eka2l1::ios {
 }
 
 - (void)shutdown {
+    std::lock_guard<std::recursive_mutex> session_lock(_sessionMutex);
     if (!_state) {
         return;
     }
-    // Wait out any in-flight rescan/boot before tearing the whole state down.
-    // Released just before _state.reset() — the mutex lives inside _state.
-    std::unique_lock<std::recursive_mutex> session_lock(_state->session_mutex);
     // Quiesce sensor callbacks (pause doubles as an in-flight barrier) before
     // the kernel they complete into goes away below.
     if (_state->sensor_driver) {
@@ -1180,7 +1225,6 @@ namespace eka2l1::ios {
     _state->sensor_driver.reset();
     _state->window.reset();
     _state->settings.reset();
-    session_lock.unlock();
     _state.reset();
 }
 
@@ -1453,6 +1497,7 @@ namespace eka2l1::ios {
     _state->winserv = eka2l1::ios::get_window_server(sys->get_kernel_system());
 
     _state->mounted = true;
+    [self applyNetworkingSuspended:_networkingSuspended.load()];
     eka2l1::ios::bind_graphics_driver(_state.get());
 
     // Register a per-screen redraw callback so each frame produced by the
@@ -1837,8 +1882,9 @@ namespace eka2l1::ios {
     // is back, so an orphaned player would keep playing forever. Destroy them here instead,
     // now that the kernel lock is released: an audio teardown waits out the render callback
     // in flight, and that callback needs the kernel lock to finish guest notifications.
-    // TODO: the deferred-teardown queue this used to drain arrives with the audio
-    // lifetime work that follows this port; there is nothing to flush yet.
+    if (auto *dispatcher = _state->symsys->get_dispatcher()) {
+        dispatcher->flush_pending_teardown();
+    }
 }
 
 - (BOOL)installSisAtPath:(NSString *)sisPath {
@@ -1854,7 +1900,7 @@ namespace eka2l1::ios {
     return result == eka2l1::package::installation_result_success ? YES : NO;
 }
 
-- (EKA2L1NGageInstallReport *)installNGageGameAtFolderPath:(NSString *)folderPath {
+- (EKA2L1NGageInstallReport *)installNGageGameAtPath:(NSString *)cardPath {
     EKA2L1NGageInstallReport *report = [[EKA2L1NGageInstallReport alloc] init];
     report.result = eka2l1::ngage_game_card_general_error;
     report.gameName = @"";
@@ -1874,7 +1920,7 @@ namespace eka2l1::ios {
         std::lock_guard<std::recursive_mutex> session_lock(_state->session_mutex);
         const bool was_mounted = _state->mounted;
         auto loop_lock = eka2l1::ios::pause_loop_and_lock(_state.get());
-        result = _state->symsys->install_ngage_game_card(folderPath.UTF8String, [&](std::string name) {
+        result = _state->symsys->install_ngage_game_card(cardPath.UTF8String, [&](std::string name) {
             gameName = std::move(name);
         });
         _state->mounted = was_mounted;
@@ -2060,9 +2106,19 @@ namespace eka2l1::ios {
 }
 
 
+- (void)setExternalDisplayLayer:(CAEAGLLayer *)layer enabled:(BOOL)enabled {
+    if (_state && _state->window) {
+        _state->window->external_display.set_surface((__bridge void *)layer, enabled);
+    }
+}
+
 - (void)detachLayer {
     if (!_state) {
         return;
+    }
+    {
+        std::lock_guard<std::mutex> lock(_state->display_geometry_mutex);
+        _state->display_rect = {};
     }
     {
         std::lock_guard<std::mutex> lk(_state->layer_mutex);
@@ -2077,6 +2133,7 @@ namespace eka2l1::ios {
 
 - (void)pause {
     if (!_state) return;
+    eka2l1::drivers::hwrm::set_vibration_suspended(true);
     _state->paused = true;
     // Break the idle wait so a parked loop returns and the os_thread settles on
     // its paused sleep promptly instead of after the next guest timer.
@@ -2103,6 +2160,7 @@ namespace eka2l1::ios {
 
 - (void)resume {
     if (!_state) return;
+    eka2l1::drivers::hwrm::set_vibration_suspended(false);
     NSError *err = nil;
     const BOOL audio_session_active =
         [[AVAudioSession sharedInstance] setActive:YES error:&err];
@@ -2119,6 +2177,60 @@ namespace eka2l1::ios {
     // Resume guest execution only after host devices have been restored, so
     // guest stream start/stop calls cannot race the AudioUnit restart above.
     _state->paused = false;
+}
+
+// Call with session_mutex held; the kernel and midman belong to that session.
+- (void)applyNetworkingSuspended:(BOOL)suspended {
+    if (!_state || !_state->mounted || !_state->symsys) {
+        return;
+    }
+
+    auto *kern = _state->symsys->get_kernel_system();
+    if (!kern) {
+        return;
+    }
+
+    eka2l1::kernel_lock lock(kern);
+    auto *server = kern->get_by_name<eka2l1::btman_server>(
+        eka2l1::get_btman_server_name_by_epocver(kern->get_epoc_version()));
+
+    if (auto *midman = server ? server->get_midman() : nullptr) {
+        if (suspended) {
+            midman->suspend();
+        } else {
+            midman->resume();
+        }
+    }
+}
+
+- (void)suspendNetworking {
+    _networkingSuspended = true;
+    dispatch_async(eka2l1::ios::emulator_control_queue(), ^{
+        std::lock_guard<std::recursive_mutex> session_lock(self->_sessionMutex);
+        [self applyNetworkingSuspended:YES];
+    });
+}
+
+- (void)resumeNetworking {
+    _networkingSuspended = false;
+    dispatch_async(eka2l1::ios::emulator_control_queue(), ^{
+        std::lock_guard<std::recursive_mutex> session_lock(self->_sessionMutex);
+        [self applyNetworkingSuspended:NO];
+    });
+}
+
+- (CGRect)guestDisplayRect {
+    if (!_state) return CGRectZero;
+    std::lock_guard<std::mutex> lock(_state->display_geometry_mutex);
+    const auto &rect = _state->display_rect;
+    return CGRectMake(rect.top.x, rect.top.y, rect.size.x, rect.size.y);
+}
+
+- (void)setGameController:(GCController *)controller motion:(BOOL)motion vibration:(BOOL)vibration {
+    if (!_state) return;
+    eka2l1::drivers::set_controller_motion_source(_state->sensor_driver.get(),
+        motion ? (__bridge void *)controller : nullptr);
+    eka2l1::drivers::hwrm::set_controller_haptic_source(vibration ? (__bridge void *)controller : nullptr);
 }
 
 - (void)submitPointerEventAtX:(CGFloat)x
@@ -2411,7 +2523,17 @@ static constexpr std::uint8_t k_unlimited_refresh_rate = 240;
     }
     NSString *deviceDisplayName = snapshot[@"deviceDisplayName"];
     if ([deviceDisplayName isKindOfClass:NSString.class]) {
+        std::lock_guard<std::recursive_mutex> session_lock(_state->session_mutex);
         _state->conf.device_display_name = deviceDisplayName.UTF8String;
+        if (_state->symsys && _state->mounted) {
+            auto *kern = _state->symsys->get_kernel_system();
+            eka2l1::kernel_lock lock(kern);
+            auto *server = kern->get_by_name<eka2l1::btman_server>(
+                eka2l1::get_btman_server_name_by_epocver(kern->get_epoc_version()));
+            if (server) {
+                server->device_name(eka2l1::common::utf8_to_ucs2(_state->conf.device_display_name));
+            }
+        }
     }
     NSString *logFilter = snapshot[@"logFilter"];
     if ([logFilter isKindOfClass:NSString.class]) {
@@ -2434,9 +2556,7 @@ static constexpr std::uint8_t k_unlimited_refresh_rate = 240;
     // emulator instances share one machine, which iOS never does. Edit
     // config.yml directly for that case.
     //
-    // Discovery port for direct IP mode (the other modes bind the fixed
-    // harbour port instead). Clamped so a stray value can never make the
-    // midman bind an out-of-range port at boot.
+    // Bonjour advertises this query port; Direct IP peers configure it explicitly.
     NSNumber *btnetListenPort = snapshot[@"btnetListenPort"];
     if (btnetListenPort) {
         _state->conf.internet_bluetooth_port = std::clamp(btnetListenPort.intValue, 1, 65535);

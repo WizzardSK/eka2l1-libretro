@@ -3,6 +3,7 @@
 
 #include <common/platform.h>
 
+#include <atomic>
 #include <type_traits>
 
 #if EKA2L1_PLATFORM(ANDROID)
@@ -15,6 +16,8 @@
 #if TARGET_OS_SIMULATOR
 #include <drivers/camera/backend/ios/camera_simulator.h>
 #endif
+#elif defined(EKA2L1_HAVE_QT_CAMERA)
+#include <drivers/camera/backend/qt/camera_qt.h>
 #endif
 
 namespace eka2l1::drivers::camera {
@@ -24,6 +27,18 @@ namespace eka2l1::drivers::camera {
         "camera::collection is owned polymorphically and must be destroyed polymorphically");
 
     std::unique_ptr<collection> collection_detail = nullptr;
+
+    // Written by the presenter thread, read on whichever thread a backend converts
+    // a frame on.
+    static std::atomic<int> frame_rotation_deg = 0;
+
+    void set_frame_rotation(const int degrees) {
+        frame_rotation_deg.store(((degrees % 360) + 360) % 360, std::memory_order_relaxed);
+    }
+
+    int frame_rotation() {
+        return frame_rotation_deg.load(std::memory_order_relaxed);
+    }
 
     collection *get_collection() {
         if (collection_detail == nullptr) {
@@ -42,6 +57,8 @@ namespace eka2l1::drivers::camera {
                 collection_detail = std::make_unique<collection_simulator>();
             }
 #endif
+#elif defined(EKA2L1_HAVE_QT_CAMERA)
+            collection_detail = std::make_unique<collection_qt>();
 #else
             collection_detail = std::make_unique<collection_null>();
 #endif

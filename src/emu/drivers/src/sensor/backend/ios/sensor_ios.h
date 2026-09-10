@@ -21,8 +21,10 @@
 
 #include <common/linked.h>
 #include <drivers/sensor/sensor.h>
+#include <drivers/sensor/rotation.h>
 
 #include <atomic>
+#include <array>
 #include <memory>
 #include <mutex>
 #include <vector>
@@ -39,6 +41,7 @@ namespace eka2l1::drivers {
         friend class sensor_driver_ios;
 
         sensor_driver_ios *driver_;
+        sensor_type type_;
         bool listening_;
 
         std::vector<std::uint8_t> events_translated_;
@@ -52,7 +55,7 @@ namespace eka2l1::drivers {
 
         common::double_linked_queue_element listening_link_;
 
-        // Called by the driver's CoreMotion pump for each accelerometer
+        // Called by the driver's motion pump for each accelerometer
         // sample, already converted to the Android/Symbian m/s^2 convention.
         void push_sample(const double x_ms2, const double y_ms2, const double z_ms2);
 
@@ -62,7 +65,7 @@ namespace eka2l1::drivers {
             std::size_t &packet_count_out);
 
     public:
-        explicit sensor_ios(sensor_driver_ios *driver);
+        explicit sensor_ios(sensor_driver_ios *driver, sensor_type type);
         ~sensor_ios() override;
 
         bool get_property(const sensor_property prop, const std::int32_t item_index,
@@ -77,7 +80,7 @@ namespace eka2l1::drivers {
         std::vector<sensor_property_data> get_all_properties(const sensor_property *prop_value = nullptr) override;
 
         std::uint32_t data_packet_size() const override {
-            return sizeof(sensor_accelerometer_axis_data);
+            return type_ == SENSOR_TYPE_ROTATION ? sizeof(sensor_rotation_data) : sizeof(sensor_accelerometer_axis_data);
         }
     };
 
@@ -93,13 +96,15 @@ namespace eka2l1::drivers {
 
         // CCW angle from the iPhone's natural orientation to the emulated
         // device's natural orientation (see sensor_driver::set_motion_rotation).
-        // Written by the frontend's present path, read on the CoreMotion queue.
+        // Written by the frontend's present path, read on the sampling queue.
         std::atomic<int> motion_rotation_deg_;
+        std::atomic<int> controller_rotation_deg_{0};
+        std::atomic<bool> controller_motion_available_{false};
 
         void track_active_listener(common::double_linked_queue_element *link);
         void untrack_active_listener(common::double_linked_queue_element *link);
 
-        // Starts / stops / retunes CoreMotion accelerometer updates to match
+        // Starts / stops / retunes the motion source and sampling timer to match
         // the current listener set, pause state and requested sampling rate.
         // Callers must hold list_lock_.
         void refresh_pump_locked();
@@ -108,7 +113,8 @@ namespace eka2l1::drivers {
         void refresh_pump();
 
         // Pump handler: fan a sample out to every listening sensor.
-        void dispatch_sample(const double x_ms2, const double y_ms2, const double z_ms2);
+        void poll_sample();
+        void dispatch_sample(std::array<double, 3> acceleration, std::array<double, 3> gravity, int rotation);
 
         std::uint32_t max_requested_sampling_rate_locked();
 
@@ -122,6 +128,8 @@ namespace eka2l1::drivers {
         bool pause() override;
         bool resume() override;
         void set_motion_rotation(const int degrees) override;
+        void set_controller(void *controller);
+        void set_controller_rotation(int degrees);
 
         bool accelerometer_available() const;
     };

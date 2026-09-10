@@ -194,11 +194,21 @@ void display_widget::keyReleaseEvent(QKeyEvent *event) {
     }
 }
 
+static int mouse_button_index(Qt::MouseButtons buttons) {
+    std::uint32_t mask = static_cast<std::uint32_t>(buttons);
+    int index = -1;
+    while (mask) {
+        ++index;
+        mask >>= 1;
+    }
+    return index;
+}
+
 void display_widget::mousePressEvent(QMouseEvent *event) {
     const qreal pixel_ratio = devicePixelRatioF();
 
     if (raw_mouse_event) {
-        const int button = eka2l1::common::find_most_significant_bit_one(event->button());
+        const int button = mouse_button_index(event->button());
         raw_mouse_event(userdata_, eka2l1::vec3(event->pos().x() * pixel_ratio, event->pos().y() * pixel_ratio, 0), button, 0, 0);
     }
 }
@@ -207,7 +217,7 @@ void display_widget::mouseReleaseEvent(QMouseEvent *event) {
     if (raw_mouse_event) {
         const qreal pixel_ratio = devicePixelRatioF();
 
-        const int button = eka2l1::common::find_most_significant_bit_one(event->button());
+        const int button = mouse_button_index(event->button());
         raw_mouse_event(userdata_, eka2l1::vec3(event->pos().x() * pixel_ratio, event->pos().y() * pixel_ratio, 0), button, 2, 0);
     }
 }
@@ -217,7 +227,7 @@ void display_widget::mouseMoveEvent(QMouseEvent *event) {
     const qreal pixel_ratio = devicePixelRatioF();
 
     if (raw_mouse_event) {
-        const int button = (event->buttons() == Qt::NoButton) ? -1 : eka2l1::common::find_most_significant_bit_one(event->buttons());
+        const int button = mouse_button_index(event->buttons());
         raw_mouse_event(userdata_, eka2l1::vec3(event->pos().x() * pixel_ratio, event->pos().y() * pixel_ratio, 0), button, 1, 0);
     }
 }
@@ -234,13 +244,17 @@ bool display_widget::event(QEvent *event) {
 
         const qreal pixel_ratio = devicePixelRatioF();
 
-        for (std::size_t i = 0; i < active_pointers_.size(); i++) {
-            if (active_pointers_[i] == 0) {
-                active_pointers_[i] = points[i].id() + 1;
-                raw_mouse_event(userdata_, eka2l1::vec3(static_cast<int>(points[i].pos().x() * pixel_ratio),
-                    static_cast<int>(points[i].pos().y() * pixel_ratio),
-                    static_cast<int>(points[i].pressure() * eka2l1::PRESSURE_MAX_NUM)),
-                    0, 0, static_cast<int>(i));
+        for (std::size_t i = 0; i < static_cast<std::size_t>(points.size()); i++) {
+            for (std::size_t j = 0; j < active_pointers_.size(); j++) {
+                if (active_pointers_[j] == 0) {
+                    active_pointers_[j] = points[i].id() + 1;
+                    raw_mouse_event(userdata_, eka2l1::vec3(static_cast<int>(points[i].pos().x() * pixel_ratio),
+                        static_cast<int>(points[i].pos().y() * pixel_ratio),
+                        static_cast<int>(points[i].pressure() * eka2l1::PRESSURE_MAX_NUM)),
+                        0, 0, static_cast<int>(j));
+
+                    break;
+                }
             }
         }
 
@@ -276,12 +290,18 @@ bool display_widget::event(QEvent *event) {
                             static_cast<int>(points[i].pos().y() * pixel_ratio),
                             static_cast<int>(points[i].pressure() * eka2l1::PRESSURE_MAX_NUM)),
                             0, 0, static_cast<int>(j));
+
+                        break;
                     }
                 }
             }
         }
 
         for (std::size_t i = 0; i < active_pointers_.size(); i++) {
+            if (active_pointers_[i] == 0) {
+                continue;
+            }
+
             bool found = false;
             for (std::size_t j = 0; j < points.size(); j++) {
                 if (active_pointers_[i] == (points[j].id() + 1)) {

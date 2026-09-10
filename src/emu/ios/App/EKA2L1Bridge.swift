@@ -1,4 +1,5 @@
 import Foundation
+import GameController
 import QuartzCore
 
 // Sandbox Documents directory hosting the emulator's file tree (roms/, data/,
@@ -47,14 +48,9 @@ struct EKA2L1LanguageItem: Identifiable, Hashable {
     var id: Int { code }
 }
 
-// Cross-view frontend signals. Posted by the settings page when it mutates
-// emulator state the home surface owns, so ContentView can refresh without a
-// shared store: the app list after a system-language switch, and the device
-// list after a device rename. (The device-manager page needs neither — it runs
-// on the home surface's own state and actions.)
+// Settings signals the home surface to reload captions after a language change.
 extension Notification.Name {
     static let eka2l1AppListInvalidated = Notification.Name("eka2l1AppListInvalidated")
-    static let eka2l1DevicesChanged = Notification.Name("eka2l1DevicesChanged")
 }
 
 @MainActor
@@ -87,9 +83,7 @@ final class EKA2L1Bridge {
         emulator.currentDeviceIndex()
     }
 
-    // Rename an installed device (updates its model + devices.yml). The home
-    // surface refreshes its title / device list off the eka2l1DevicesChanged
-    // notification the caller posts on success.
+    // Rename an installed device (updates its model + devices.yml).
     @discardableResult
     func renameDevice(at index: Int, to name: String) -> Bool {
         emulator.renameDevice(at: UInt(index), to: name)
@@ -194,8 +188,8 @@ final class EKA2L1Bridge {
         EKA2L1Emulator.shared().installSis(atPath: path)
     }
 
-    nonisolated static func installNGageGame(folderPath: String) -> EKA2L1NGageInstallItem {
-        let report = EKA2L1Emulator.shared().installNGageGame(atFolderPath: folderPath)
+    nonisolated static func installNGageGame(cardPath: String) -> EKA2L1NGageInstallItem {
+        let report = EKA2L1Emulator.shared().installNGageGame(atPath: cardPath)
         return EKA2L1NGageInstallItem(result: report.result, gameName: report.gameName)
     }
 
@@ -205,6 +199,16 @@ final class EKA2L1Bridge {
 
     func attach(layer: CAEAGLLayer, pixelSize: CGSize, scale: CGFloat) {
         emulator.attach(layer: layer, pixelSize: pixelSize, scale: scale)
+    }
+
+    func setExternalDisplay(layer: CAEAGLLayer?, enabled: Bool) {
+        emulator.setExternalDisplay(layer: layer, enabled: enabled)
+    }
+
+    var guestDisplayRect: CGRect { emulator.guestDisplayRect() }
+
+    func setGameController(_ controller: GCController?, motion: Bool, vibration: Bool) {
+        emulator.setGameController(controller, motion: motion, vibration: vibration)
     }
 
     func detachLayer() {
@@ -217,6 +221,14 @@ final class EKA2L1Bridge {
 
     func resume() {
         emulator.resume()
+    }
+
+    func suspendNetworking() {
+        emulator.suspendNetworking()
+    }
+
+    func resumeNetworking() {
+        emulator.resumeNetworking()
     }
 
     func guestScreenModeSnapshot() -> (modes: [Int], current: Int) {

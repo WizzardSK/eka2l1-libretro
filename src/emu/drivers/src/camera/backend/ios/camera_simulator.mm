@@ -22,6 +22,7 @@
 
 #include <drivers/camera/backend/ios/camera_pixel_ios.h>
 #include <drivers/camera/backend/ios/camera_simulator.h>
+#include <drivers/camera/camera_collection.h>
 
 #include <common/log.h>
 
@@ -129,14 +130,45 @@ namespace eka2l1::drivers::camera {
 
     static bool encode_pattern(const int width, const int height, const std::uint32_t frame_index,
         const bool front_facing, const frame_format format, std::vector<std::uint8_t> &out) {
+        // The pattern stands in for a raw sensor readout, in the landscape shape
+        // and with the same orientation a built-in camera hands over, and then
+        // goes through the exact rotate-and-stretch the device backend applies.
+        // Generating straight at the requested size skipped the orientation path
+        // altogether, which is what left the simulator blind to frames arriving
+        // sideways on hardware.
+        const int sensor_width = std::max(width, height);
+        const int sensor_height = std::min(width, height);
+        const int rotation = ios_frame_rotation_ccw();
+
+        std::vector<std::uint8_t> sensor_bgra;
+        synthesize_test_pattern_bgra(sensor_width, sensor_height, frame_index, front_facing,
+            sensor_bgra);
+
         std::vector<std::uint8_t> bgra;
-        synthesize_test_pattern_bgra(width, height, frame_index, front_facing, bgra);
+
+        if ((rotation == 0) && (sensor_width == width) && (sensor_height == height)) {
+            bgra = std::move(sensor_bgra);
+        } else {
+            CGImageRef sensor_image = ios_create_cgimage_from_bgra(sensor_bgra.data(),
+                static_cast<std::size_t>(sensor_width) * 4, sensor_width, sensor_height);
+            if (!sensor_image) {
+                return false;
+            }
+
+            const bool rendered = ios_render_cgimage_to_bgra(sensor_image, width, height,
+                rotation, bgra);
+            CGImageRelease(sensor_image);
+
+            if (!rendered) {
+                return false;
+            }
+        }
 
         if ((format == FRAME_FORMAT_JPEG) || (format == FRAME_FORMAT_EXIF)) {
             return ios_encode_bgra_to_jpeg(bgra.data(), width, height, out);
         }
 
-        return ios_convert_bgra_to_guest(bgra.data(), static_cast<std::size_t>(width) * 4,
+        return convert_bgra_to_guest(bgra.data(), static_cast<std::size_t>(width) * 4,
             width, height, format, out);
     }
 
@@ -312,8 +344,8 @@ namespace eka2l1::drivers::camera {
         }
 
         std::vector<frame_format> supported_frame_formats() override {
-            return std::vector<frame_format>(std::begin(IOS_SUPPORTED_FORMATS),
-                std::end(IOS_SUPPORTED_FORMATS));
+            return std::vector<frame_format>(std::begin(SUPPORTED_FRAME_FORMATS),
+                std::end(SUPPORTED_FRAME_FORMATS));
         }
 
         std::vector<eka2l1::vec2> supported_output_image_sizes(const frame_format) override {
@@ -343,7 +375,7 @@ namespace eka2l1::drivers::camera {
             result.options_supported_ = CAPTURE_OPTION_ALL;
             result.supported_image_formats_ = 0;
 
-            for (const frame_format format: IOS_SUPPORTED_FORMATS) {
+            for (const frame_format format: SUPPORTED_FRAME_FORMATS) {
                 result.supported_image_formats_ |= static_cast<std::uint32_t>(format);
             }
 
@@ -357,7 +389,7 @@ namespace eka2l1::drivers::camera {
                 return;
             }
 
-            if (!ios_is_supported_format(format)) {
+            if (!is_supported_frame_format(format)) {
                 LOG_ERROR(DRIVER_CAM, "Capture format {} is not supported!", static_cast<int>(format));
                 callback(nullptr, 0, -1);
                 return;
@@ -404,7 +436,7 @@ namespace eka2l1::drivers::camera {
                 return;
             }
 
-            if (!ios_is_supported_format(format)) {
+            if (!is_supported_frame_format(format)) {
                 LOG_ERROR(DRIVER_CAM, "Viewfinder format {} is not supported!", static_cast<int>(format));
                 return;
             }

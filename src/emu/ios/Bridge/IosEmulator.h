@@ -8,6 +8,8 @@
 // yet. Implemented on top of the C++ `eka2l1::ios::emulator` in IosEmulator.mm.
 
 #import <Foundation/Foundation.h>
+
+@class GCController;
 #import <QuartzCore/CAEAGLLayer.h>
 
 NS_ASSUME_NONNULL_BEGIN
@@ -192,10 +194,10 @@ typedef NS_ENUM(NSInteger, EKA2L1InstallResult) {
 // S80 devices and drive E otherwise, mirroring the Android install path.
 - (BOOL)installSisAtPath:(NSString *)sisPath;
 
-// Install an N-Gage game-card folder. Returns the core
-// ngage_game_card_install_error code plus the detected game name when
-// available. Heavy; call from a background queue.
-- (EKA2L1NGageInstallReport *)installNGageGameAtFolderPath:(NSString *)folderPath;
+// Install a classic N-Gage game card, given either the card folder or an
+// archive holding it. Returns the core ngage_game_card_install_error code plus
+// the detected game name when available. Heavy; call from a background queue.
+- (EKA2L1NGageInstallReport *)installNGageGameAtPath:(NSString *)cardPath;
 
 // Uninstall a user-installed package by its app UID. Deletes the package's
 // files and registration; ROM/system apps cannot be uninstalled. Returns NO if
@@ -209,9 +211,16 @@ typedef NS_ENUM(NSInteger, EKA2L1InstallResult) {
          pixelSize:(CGSize)pixelSize
               scale:(CGFloat)scale NS_SWIFT_NAME(attach(layer:pixelSize:scale:));
 - (void)detachLayer NS_SWIFT_NAME(detachLayer());
+- (void)setExternalDisplayLayer:(nullable CAEAGLLayer *)layer enabled:(BOOL)enabled
+    NS_SWIFT_NAME(setExternalDisplay(layer:enabled:));
 
 - (void)pause;
 - (void)resume;
+
+// Sockets do not survive the process being suspended, so the app reports a real
+// background transition (not a passing .inactive) around rebuilding them.
+- (void)suspendNetworking;
+- (void)resumeNetworking;
 
 // Input -------------------------------------------------------------------
 // Single-touch dispatch from EAGLView.
@@ -229,6 +238,8 @@ typedef NS_ENUM(NSInteger, EKA2L1PointerPhase) {
 
 - (void)submitRawKey:(uint32_t)scanCode pressed:(BOOL)pressed;
 - (void)tapRawKey:(uint32_t)scanCode;
+- (CGRect)guestDisplayRect;
+- (void)setGameController:(nullable GCController *)controller motion:(BOOL)motion vibration:(BOOL)vibration;
 
 // YES when the booted device's Symbian version drives its UI by touch
 // (S60v5 / Symbian^3 and later). The frontend uses it to pick the fullscreen

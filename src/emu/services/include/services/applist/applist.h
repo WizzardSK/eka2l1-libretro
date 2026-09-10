@@ -260,6 +260,9 @@ namespace eka2l1 {
         */
         void app_language(service::ipc_context &ctx);
 
+        /*! \brief Get how many applications the list holds, as the completion code. */
+        void app_count(service::ipc_context &ctx);
+
         /*! \brief Request the server to run app.
          *
          * Iter through every AppList plugins, set status to true
@@ -317,7 +320,8 @@ namespace eka2l1 {
     protected:
         bool launch_app(const std::u16string &exe_path, const std::u16string &cmd, kernel::uid *thread_id,
             kernel::process *requester = nullptr, const epoc::uid known_uid = 0,
-            std::function<void(kernel::process*)> app_exit_callback = nullptr);
+            std::function<void(kernel::process*)> app_exit_callback = nullptr,
+            const std::string *environment_main = nullptr);
 
     public:
         explicit applist_server(system *sys);

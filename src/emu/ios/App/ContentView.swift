@@ -10,13 +10,23 @@ import UniformTypeIdentifiers
 //     switcher and, below a divider, "Install device" and "Manage devices";
 //     the ellipsis menu holds Settings, the system-apps toggle and help; the
 //     "+" menu installs a SIS, a classic N-Gage game card, or an N-Gage 2.0
-//     package onto the device.
+//     package onto the device. Pulling the grid down re-scans the registry.
 
 // SIS files only — device ROM / RPKG go through ImportDeviceView's own picker.
 private let sisTypes: [UTType] = {
     var types = importTypes(extension: "sis", declaredAs: "com.eka2l1.sis")
     for type in importTypes(extension: "sisx", declaredAs: "com.eka2l1.sisx")
     where !types.contains(type) {
+        types.append(type)
+    }
+    return types
+}()
+
+// Classic N-Gage game cards: a folder tree, but usually passed around packed.
+// The installer unpacks an archive itself, sniffing the container by content.
+private let ngageCardTypes: [UTType] = {
+    var types: [UTType] = [.folder, .zip]
+    for type in archiveTypes + rarTypes where !types.contains(type) {
         types.append(type)
     }
     return types
@@ -134,7 +144,7 @@ struct ContentView: View {
         case .sis:
             return sisTypes
         case .ngage:
-            return [.folder]
+            return ngageCardTypes
         case .ngage2:
             return ngage2Types
         case .font:
@@ -143,8 +153,8 @@ struct ContentView: View {
     }
 
     private var homeImporterAllowsMultipleSelection: Bool {
-        // Folder-based classic N-Gage install picks a single game card; SIS
-        // packages, .n-gage packages and fonts can be batch-imported.
+        // A classic N-Gage install takes one game card at a time; SIS packages,
+        // .n-gage packages and fonts can be batch-imported.
         homeImportTarget != .ngage
     }
 
@@ -224,11 +234,6 @@ struct ContentView: View {
             // app list should render; re-scan so the new captions show.
             guard booted else { return }
             store.reloadApps()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .eka2l1DevicesChanged)) { _ in
-            // A device was renamed in Settings: only the titles changed, so
-            // re-read the list to refresh the nav title and device switcher.
-            store.reloadDevices()
         }
         .onReceive(NotificationCenter.default.publisher(for: AVAudioSession.interruptionNotification)) { note in
             guard let rawType = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
@@ -339,6 +344,8 @@ struct ContentView: View {
             }
             .padding()
         }
+        // Pull down on the grid to re-scan the device's app registry.
+        .refreshable { await store.refreshApps() }
     }
 
     // The navigation title's tap menu (SwiftUI toolbarTitleMenu): the device
@@ -642,7 +649,7 @@ struct ContentView: View {
                 let report = await store.perform { () -> EKA2L1NGageInstallItem in
                     let scoped = url.startAccessingSecurityScopedResource()
                     defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-                    return EKA2L1Bridge.installNGageGame(folderPath: url.path)
+                    return EKA2L1Bridge.installNGageGame(cardPath: url.path)
                 }
                 store.reloadApps()
                 if report.succeeded {
@@ -800,6 +807,7 @@ private let rpkgTypes: [UTType] = importTypes(extension: "rpkg", declaredAs: "co
 // and everything that reads its archives use, so we import that one rather than
 // minting a com.eka2l1.* type nothing else would recognise.
 private let archiveTypes: [UTType] = importTypes(extension: "7z", declaredAs: "org.7-zip.7-zip-archive")
+private let rarTypes: [UTType] = importTypes(extension: "rar", declaredAs: "com.rarlab.rar-archive")
 
 // Shared between the main queue (which sets it from the Stop button) and the
 // install thread (which polls it between files), so the accesses are locked.

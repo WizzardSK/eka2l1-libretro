@@ -666,6 +666,11 @@ namespace eka2l1::epoc {
         return epoc::error_none;
     }
 
+    // Symbian 9.1 keys TLS by the DLL handle, like EKA1.
+    BRIDGE_FUNC(std::int32_t, dll_set_tls_no_uid, kernel::handle h, eka2l1::ptr<void> data_set) {
+        return dll_set_tls(kern, h, static_cast<std::int32_t>(h), data_set);
+    }
+
     BRIDGE_FUNC(void, dll_free_tls, kernel::handle h) {
         kernel::thread *thr = kern->crr_thread();
         thr->close_tls_slot(h);
@@ -2886,7 +2891,17 @@ namespace eka2l1::epoc {
             return;
         }
 
-        timer->after(kern->crr_thread(), req_sts, us_after);
+        timer->after_tick_queue(kern->crr_thread(), req_sts, us_after);
+    }
+
+    BRIDGE_FUNC(void, timer_after_high_res, kernel::handle h, eka2l1::ptr<epoc::request_status> req_sts, std::int32_t us_after) {
+        timer_ptr timer = kern->get<kernel::timer>(h);
+
+        if (!timer) {
+            return;
+        }
+
+        timer->after_high_res(kern->crr_thread(), req_sts, us_after);
     }
 
     BRIDGE_FUNC(void, timer_lock, kernel::handle h, eka2l1::ptr<epoc::request_status> req_sts, std::uint32_t second_fraction_enum) {
@@ -2912,7 +2927,7 @@ namespace eka2l1::epoc {
             return;
         }
 
-        timer->after(kern->crr_thread(), req_sts, us_after);
+        timer->after_tick_queue(kern->crr_thread(), req_sts, us_after);
     }
     
     BRIDGE_FUNC(void, timer_after_ticks_eka1, eka2l1::ptr<epoc::request_status> req_sts, std::int32_t ticks_after, kernel::handle h) {
@@ -6012,7 +6027,7 @@ namespace eka2l1::epoc {
         BRIDGE_REGISTER(0x83, logical_device_free),
         BRIDGE_REGISTER(0x84, logical_channel_create),
         BRIDGE_REGISTER(0x85, timer_create),
-        BRIDGE_REGISTER(0x86, timer_after), // Actually TimerHighRes
+        BRIDGE_REGISTER(0x86, timer_after_high_res), // Actually TimerHighRes
         BRIDGE_REGISTER(0x87, after), // Actually AfterHighRes
         BRIDGE_REGISTER(0x88, change_notifier_create),
         BRIDGE_REGISTER(0x8D, thread_get_cpu_time),
@@ -6194,7 +6209,7 @@ namespace eka2l1::epoc {
         BRIDGE_REGISTER(0x7F, session_create),
         BRIDGE_REGISTER(0x80, session_create_from_handle),
         BRIDGE_REGISTER(0x84, timer_create),
-        BRIDGE_REGISTER(0x85, timer_after), // Actually TimerHighRes
+        BRIDGE_REGISTER(0x85, timer_after_high_res), // Actually TimerHighRes
         BRIDGE_REGISTER(0x86, after), // Actually AfterHighRes
         BRIDGE_REGISTER(0x87, change_notifier_create),
         BRIDGE_REGISTER(0x9C, wait_dll_lock),
@@ -6249,6 +6264,12 @@ namespace eka2l1::epoc {
         BRIDGE_REGISTER(0xE2, get_module_name_from_address),
         BRIDGE_REGISTER(0xE5, session_security_info),
         BRIDGE_REGISTER(0xE8, btrace_out)
+    };
+
+    // Register 9.1 ABI differences before the shared 9.3 table.
+    const eka2l1::hle::func_map svc_register_funcs_v91_diff = {
+        BRIDGE_REGISTER(0x4D, dll_tls_eka1),
+        BRIDGE_REGISTER(0x75, dll_set_tls_no_uid)
     };
 
     const eka2l1::hle::func_map svc_register_funcs_v93 = {
@@ -6368,7 +6389,7 @@ namespace eka2l1::epoc {
         BRIDGE_REGISTER(0x7E, session_create),
         BRIDGE_REGISTER(0x7F, session_create_from_handle),
         BRIDGE_REGISTER(0x83, timer_create),
-        BRIDGE_REGISTER(0x84, timer_after), // Actually TimerHighRes
+        BRIDGE_REGISTER(0x84, timer_after_high_res), // Actually TimerHighRes
         BRIDGE_REGISTER(0x85, after), // Actually AfterHighRes
         BRIDGE_REGISTER(0x86, change_notifier_create),
         BRIDGE_REGISTER(0x9B, wait_dll_lock),
@@ -6472,6 +6493,8 @@ namespace eka2l1::epoc {
         BRIDGE_REGISTER(0x80002C, semaphore_signal_n_eka1),
         BRIDGE_REGISTER(0x80002D, server_find_next),
         BRIDGE_REGISTER(0x800033, thread_find_next),
+        BRIDGE_REGISTER(0x800040, thread_get_des_length),
+        BRIDGE_REGISTER(0x800041, thread_get_des_max_length),
         BRIDGE_REGISTER(0x800042, thread_read_ipc_to_des8),
         BRIDGE_REGISTER(0x800043, thread_read_ipc_to_des16),
         BRIDGE_REGISTER(0x800044, thread_write_ipc_to_des8),
@@ -6554,6 +6577,7 @@ namespace eka2l1::epoc {
         BRIDGE_REGISTER(0x1A, mutex_signal_eka1),
         BRIDGE_REGISTER(0x1B, process_id),
         BRIDGE_REGISTER(0x20, process_exit_type),
+        BRIDGE_REGISTER(0x21, process_exit_reason),
         BRIDGE_REGISTER(0x29, semaphore_count_eka1),
         BRIDGE_REGISTER(0x2A, semaphore_wait_eka1),
         BRIDGE_REGISTER(0x32, thread_id),
@@ -6589,6 +6613,12 @@ namespace eka2l1::epoc {
         BRIDGE_REGISTER(0x80002C, semaphore_signal_n_eka1),
         BRIDGE_REGISTER(0x80002D, server_find_next),
         BRIDGE_REGISTER(0x800033, thread_find_next),
+        BRIDGE_REGISTER(0x800040, thread_get_des_length),
+        BRIDGE_REGISTER(0x800041, thread_get_des_max_length),
+        BRIDGE_REGISTER(0x800042, thread_read_ipc_to_des8),
+        BRIDGE_REGISTER(0x800043, thread_read_ipc_to_des16),
+        BRIDGE_REGISTER(0x800044, thread_write_ipc_to_des8),
+        BRIDGE_REGISTER(0x800045, thread_write_ipc_to_des16),
         BRIDGE_REGISTER(0x80004B, change_notifier_logon_eka1),
         BRIDGE_REGISTER(0x80004C, change_notifier_logoff),
         BRIDGE_REGISTER(0x800054, des8_match),
@@ -6607,11 +6637,13 @@ namespace eka2l1::epoc {
         BRIDGE_REGISTER(0x80007E, dll_global_data_read),
         BRIDGE_REGISTER(0x80007F, dll_global_data_write),
         BRIDGE_REGISTER(0x800083, user_svr_hal_get),
+        BRIDGE_REGISTER(0x8000A2, is_exception_handled_eka1),
         BRIDGE_REGISTER(0x8000A8, heap_created),
         BRIDGE_REGISTER(0x8000A9, library_type_eka1),
         BRIDGE_REGISTER(0x8000AA, process_type_eka1),
         BRIDGE_REGISTER(0x8000AB, get_locale_char_set),
         BRIDGE_REGISTER(0x8000AF, process_set_type_eka1),
+        BRIDGE_REGISTER(0x8000B7, bus_dev_open_socket),
         BRIDGE_REGISTER(0x8000BB, user_svr_dll_filename),
         BRIDGE_REGISTER(0x8000C0, process_command_line_length),
         BRIDGE_REGISTER(0x8000C2, get_inactivity_time),

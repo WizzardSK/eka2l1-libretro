@@ -40,7 +40,7 @@
 #include <package/manager.h>
 #include <package/sis_script_interpreter.h>
 
-#include <miniz.h>
+#include <zlib.h>
 
 namespace eka2l1 {
     namespace loader {
@@ -101,12 +101,12 @@ namespace eka2l1 {
             }
 
             compressed.uncompressed_data.resize(compressed.uncompressed_size);
-            mz_stream stream;
+            z_stream stream;
 
             stream.zalloc = nullptr;
             stream.zfree = nullptr;
 
-            if (inflateInit(&stream) != MZ_OK) {
+            if (inflateInit(&stream) != Z_OK) {
                 LOG_ERROR(PACKAGE, "Can not intialize inflate stream");
             }
 
@@ -161,13 +161,13 @@ namespace eka2l1 {
             std::vector<unsigned char> temp_inflated_chunk;
             temp_inflated_chunk.resize(CHUNK_MAX_INFLATED_SIZE);
 
-            mz_stream stream;
+            z_stream stream;
 
             stream.zalloc = nullptr;
             stream.zfree = nullptr;
 
             if (compressed.algorithm == sis_compressed_algorithm::deflated) {
-                if (inflateInit(&stream) != MZ_OK) {
+                if (inflateInit(&stream) != Z_OK) {
                     LOG_ERROR(PACKAGE, "Can not intialize inflate stream");
                 }
             }
@@ -656,31 +656,16 @@ namespace eka2l1 {
                         }
 
                         if (!install_data->data_units.fields.empty()) {
-                            std::string raw_path;
+                            extract_target_info info;
                             if (!file_target.empty()) {
-                                const std::string install_path = get_install_path(file->target.unicode_string, install_drive);
-                                const std::optional<std::u16string> raw_path_opt = io->get_raw_path(common::utf8_to_ucs2(install_path));
-                                if (!raw_path_opt) {
-                                    LOG_ERROR(PACKAGE, "Unable to resolve SIS install target: {}", install_path);
-                                    return false;
-                                }
-                                raw_path = common::ucs2_to_utf8(*raw_path_opt);
+                                info.install_path_ = get_install_path(file->target.unicode_string, install_drive);
                             }
 
-                            extract_target_info info;
-                            info.file_path_ = raw_path;
                             info.data_unit_block_index_ = file->idx;
                             info.data_unit_index_ = crr_blck_idx;
 
                             extract_targets.push_back(info);
                             extract_target_accumulated_size += file->uncompressed_len;
-
-                            const std::string raw_path_lower = common::lowercase_string(raw_path);
-                            if ((FOUND_STR(raw_path_lower.find(".sis")) || FOUND_STR(raw_path_lower.find(".sisx")))
-                                && loader::identify_sis_type(raw_path).has_value()) {
-                                LOG_INFO(PACKAGE, "Detected an SmartInstaller SIS, path at: {}", raw_path);
-                                gathered_sis_paths.push_back(common::utf8_to_ucs2(raw_path));
-                            }
                         }
                     } else {
                         skip_next_file = false;
@@ -798,9 +783,30 @@ namespace eka2l1 {
 
                 for (; n < extract_targets.size(); n++) {
                     extract_target_info &target = extract_targets[n];
+
+                    if (!target.install_path_.empty()) {
+                        const std::optional<std::u16string> raw_path_opt = io->get_raw_path(
+                            common::utf8_to_ucs2(target.install_path_));
+
+                        if (!raw_path_opt) {
+                            LOG_ERROR(PACKAGE, "Unable to resolve SIS install target: {}", target.install_path_);
+                            cancel_requested = true;
+                            break;
+                        }
+
+                        target.file_path_ = common::ucs2_to_utf8(*raw_path_opt);
+                    }
+
                     if (!extract_file(target.file_path_, target.data_unit_block_index_, target.data_unit_index_)) {
                         cancel_requested = true;
                         break;
+                    }
+
+                    const std::string raw_path_lower = common::lowercase_string(target.file_path_);
+                    if ((FOUND_STR(raw_path_lower.find(".sis")) || FOUND_STR(raw_path_lower.find(".sisx")))
+                        && loader::identify_sis_type(target.file_path_).has_value()) {
+                        LOG_INFO(PACKAGE, "Detected an SmartInstaller SIS, path at: {}", target.file_path_);
+                        gathered_sis_paths.push_back(common::utf8_to_ucs2(target.file_path_));
                     }
                 }
 
