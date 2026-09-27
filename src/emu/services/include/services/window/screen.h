@@ -25,6 +25,7 @@
 #include <drivers/graphics/common.h>
 #include <services/window/classes/config.h>
 #include <services/window/common.h>
+#include <services/window/framebuffer.h>
 
 #include <cstdint>
 #include <functional>
@@ -42,6 +43,7 @@ namespace eka2l1 {
         struct app_setting;
     }
 
+    class kernel_system;
     class window_server;
     class ntimer;
 }
@@ -89,9 +91,8 @@ namespace eka2l1::epoc {
 
         epoc::display_mode disp_mode;
 
-        // Pixel format of the direct screen access framebuffer. Usually the same as
-        // disp_mode, but EKA1 panels expose a 16-bit framebuffer while WSERV composes
-        // in the deeper mode their wsini.ini declares.
+        // Some EKA1 clients hardcode 16-bit writes despite a deeper reported mode.
+        // Keep the detected DSA format separate from the screen device's mode.
         epoc::display_mode dsa_disp_mode;
         epoc::display_mode dsa_disp_mode_initial;
 
@@ -105,6 +106,7 @@ namespace eka2l1::epoc {
         std::uint8_t physical_mode; ///< Mode that orientation is normal.
 
         epoc::window_group *focus; ///< Current window group that is being focused
+        epoc::window_group *default_owning_group; ///< Group that adopts windows created without an owner
 
         screen *next;
 
@@ -128,6 +130,9 @@ namespace eka2l1::epoc {
         std::int32_t active_dsa_count_ = 0;
 
         bool sync_screen_buffer = false;
+
+        bool direct_framebuffer_mapped = false;
+        framebuffer_observer direct_framebuffer;
 
         enum {
             FLAG_NEED_RECALC_VISIBLE = 1 << 0,
@@ -230,6 +235,20 @@ namespace eka2l1::epoc {
          *        is measured on its own frames.
          */
         void reset_dsa_depth_guess();
+
+        /**
+         * @brief Remember that a client was given the raw framebuffer address.
+         */
+        void mark_direct_framebuffer_mapped();
+
+        // Caller holds the kernel lock.
+        void present_framebuffer(drivers::graphics_driver *driver, kernel_system *kern);
+
+        /**
+         * @brief Snapshot the directly mapped framebuffer. True if the guest wrote to it
+         *        since the last snapshot.
+         */
+        bool update_direct_framebuffer();
 
         /**
          * \brief Set screen mode.

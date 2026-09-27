@@ -23,12 +23,135 @@
 #include <common/log.h>
 #include <common/path.h>
 #include <common/configure.h>
+#include <common/platform.h>
 
 #include <config/config.h>
 #include <fstream>
 #include <yaml-cpp/yaml.h>
 
-namespace eka2l1::config {    
+#if EKA2L1_PLATFORM(WIN32)
+#include <ws2tcpip.h>
+#else
+#include <arpa/inet.h>
+#endif
+
+namespace eka2l1::config {
+    std::string normalize_host_name(std::string name) {
+        const auto first = name.find_first_not_of(" \t\r\n");
+        if (first == std::string::npos) {
+            return {};
+        }
+        name = name.substr(first, name.find_last_not_of(" \t\r\n") - first + 1);
+        if (name.back() == '.') {
+            name.pop_back();
+        }
+        return common::lowercase_string(name);
+    }
+
+    bool valid_host_name(const std::string &name) {
+        if (name.empty() || name.size() > 253) {
+            return false;
+        }
+        std::size_t label_size = 0;
+        for (const char ch : name) {
+            if (ch == '.') {
+                if (!label_size) {
+                    return false;
+                }
+                label_size = 0;
+            } else if (((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')
+                || (ch >= '0' && ch <= '9') || ch == '-' || ch == '_') && ++label_size <= 63) {
+                continue;
+            } else {
+                return false;
+            }
+        }
+        return label_size != 0;
+    }
+
+    bool valid_host_pattern(const std::string &pattern) {
+        return valid_host_name(pattern) || (pattern.starts_with("*.") && valid_host_name(pattern.substr(2)));
+    }
+
+    bool numeric_host_address(const std::string &address) {
+        if (address.find('\0') != std::string::npos) {
+            return false;
+        }
+        in_addr ipv4;
+        in6_addr ipv6;
+        return inet_pton(AF_INET, address.c_str(), &ipv4) == 1
+            || inet_pton(AF_INET6, address.c_str(), &ipv6) == 1;
+    }
+
+    std::optional<host_target> parse_host_target(const std::string &target) {
+        const auto normalized = normalize_host_name(target);
+        if (normalized.empty() || normalized.find('\0') != std::string::npos) {
+            return std::nullopt;
+        }
+
+        std::string hostname = normalized;
+        std::string port_text;
+        if (normalized.front() == '[') {
+            const auto bracket = normalized.find(']');
+            if (bracket == std::string::npos || bracket == 1 || bracket + 1 >= normalized.size()
+                || normalized[bracket + 1] != ':') {
+                return std::nullopt;
+            }
+            hostname = normalized.substr(1, bracket - 1);
+            port_text = normalized.substr(bracket + 2);
+        } else if (!numeric_host_address(normalized)) {
+            const auto colon = normalized.rfind(':');
+            if (colon != std::string::npos) {
+                hostname = normalized.substr(0, colon);
+                port_text = normalized.substr(colon + 1);
+            }
+        }
+
+        std::optional<std::uint16_t> port;
+        if (!port_text.empty()) {
+            if (port_text.size() > 5 || port_text.find_first_not_of("0123456789") != std::string::npos) {
+                return std::nullopt;
+            }
+            const auto value = std::stoul(port_text);
+            if (!value || value > 65535) {
+                return std::nullopt;
+            }
+            port = static_cast<std::uint16_t>(value);
+        } else if (hostname != normalized) {
+            return std::nullopt;
+        }
+
+        if (!numeric_host_address(hostname)
+            && (!valid_host_name(hostname) || hostname.find_first_not_of("0123456789.") == std::string::npos)) {
+            return std::nullopt;
+        }
+        return host_target{hostname, port};
+    }
+
+    bool valid_host_target(const std::string &target) {
+        return parse_host_target(target).has_value();
+    }
+
+    std::optional<host_target> state::host_override(const std::string &hostname) const {
+        const std::string domain = normalize_host_name(hostname);
+        const std::string *wildcard_target = nullptr;
+        std::size_t wildcard_size = 0;
+        for (const auto &[host, address] : hosts) {
+            const auto pattern = normalize_host_name(host);
+            if (pattern == domain) {
+                return parse_host_target(address);
+            }
+            const auto suffix = pattern.starts_with("*.") ? pattern.substr(1) : std::string{};
+            if (!suffix.empty() && domain.size() > suffix.size()
+                && domain.compare(domain.size() - suffix.size(), suffix.size(), suffix) == 0
+                && pattern.size() > wildcard_size) {
+                wildcard_target = &address;
+                wildcard_size = pattern.size();
+            }
+        }
+        return wildcard_target ? parse_host_target(*wildcard_target) : std::nullopt;
+    }
+
     screen_buffer_sync_option get_screen_buffer_sync_option_from_string(std::string str) {
         str = common::lowercase_string(str);
 

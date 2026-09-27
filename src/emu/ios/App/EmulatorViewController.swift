@@ -26,6 +26,7 @@ private final class PeripheralInputBridge {
     // Cleared while a host panel is up (see setKeyboardEnabled). Survives
     // start()/stop() so a panel open across a re-appear stays in control.
     private var keyboardEnabled = true
+    private weak var hostTextInput: UIResponder?
 
     func start() {
         guard !running else { return }
@@ -36,6 +37,25 @@ private final class PeripheralInputBridge {
         // registered ahead of ours and refresh() reads updated state.
         refresh()
         let center = NotificationCenter.default
+        for name in [UITextField.textDidBeginEditingNotification, UITextView.textDidBeginEditingNotification] {
+            observers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
+                let responder = note.object as? UIResponder
+                MainActor.assumeIsolated {
+                    self?.hostTextInput = responder
+                    self?.releaseKeyboard()
+                }
+            })
+        }
+        for name in [UITextField.textDidEndEditingNotification, UITextView.textDidEndEditingNotification] {
+            observers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
+                let responder = note.object as? UIResponder
+                MainActor.assumeIsolated {
+                    if self?.hostTextInput === responder {
+                        self?.hostTextInput = nil
+                    }
+                }
+            })
+        }
         for name: Notification.Name in [.GCControllerDidConnect, .GCControllerDidDisconnect,
                                         .GCKeyboardDidConnect, .GCKeyboardDidDisconnect] {
             observers.append(center.addObserver(forName: name, object: nil,
@@ -63,6 +83,7 @@ private final class PeripheralInputBridge {
         pointer.setEnabled(false)
         observers.forEach(NotificationCenter.default.removeObserver)
         observers.removeAll()
+        hostTextInput = nil
         controllers.forEach { $0.extendedGamepad?.valueChangedHandler = nil }
         controllers.removeAll()
         GCKeyboard.coalesced?.keyboardInput?.keyChangedHandler = nil
@@ -176,7 +197,8 @@ private final class PeripheralInputBridge {
     // releaseAll(), and its release must still be forwarded if it arrives
     // later, so it cannot stay stuck down in the guest.
     private func handleKey(usage: Int, pressed: Bool) {
-        if pressed, !running || !foreground || !keyboardEnabled || !PeripheralManager.shared.keyboardCanDrive {
+        if pressed, !running || !foreground || !keyboardEnabled || hostTextInput?.isFirstResponder == true
+            || !PeripheralManager.shared.keyboardCanDrive {
             return
         }
         updateInput(token: KeyboardKey.token(forUsage: usage),
@@ -260,15 +282,29 @@ private final class PeripheralInputBridge {
 
 private final class EKA2L1RenderView: UIView {
     var surfaceReady = false
+    var textInputEnabled = true {
+        didSet { updateTextInputButton() }
+    }
+    var textInputAvailable = false {
+        didSet { updateTextInputButton() }
+    }
+    private let textInputButton = UIButton(type: .system)
 
-    // When true, the presented guest picture is pinned just below the top safe
-    // area instead of centred, so a bottom keypad overlay covers letterbox
-    // rather than gameplay. Pushed to the bridge on every layout pass (the
-    // anchor is in surface pixels, so it depends on renderScale and insets).
-    var anchorsDisplayTop = false {
+    // Pushed to the bridge on every layout pass: it is in surface pixels, so it also
+    // depends on renderScale and the safe-area insets.
+    var displayLayout = DisplayLayoutConfiguration.standard(landscape: false) {
         didSet {
-            if anchorsDisplayTop != oldValue {
-                setNeedsLayout()
+            if displayLayout != oldValue {
+                pushDisplayLayout()
+            }
+        }
+    }
+
+    // Fullscreen ignores the stored layout entirely; see pushDisplayLayout.
+    var fullscreenLayout = false {
+        didSet {
+            if fullscreenLayout != oldValue {
+                pushDisplayLayout()
             }
         }
     }
@@ -303,11 +339,54 @@ private final class EKA2L1RenderView: UIView {
         isOpaque = true
         backgroundColor = .black
         eaglLayer.isOpaque = true
+        var configuration = UIButton.Configuration.plain()
+        configuration.title = String(localized: "emulator.enterText")
+        configuration.image = UIImage(systemName: "keyboard")
+        configuration.imagePadding = 6
+        configuration.baseForegroundColor = .white
+        configuration.background.backgroundColor = .black.withAlphaComponent(0.72)
+        configuration.background.cornerRadius = 8
+        configuration.contentInsets = NSDirectionalEdgeInsets(top: 10, leading: 10, bottom: 10, trailing: 10)
+        configuration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attributes in
+            var result = attributes
+            result.font = .systemFont(ofSize: 13, weight: .semibold)
+            return result
+        }
+        textInputButton.configuration = configuration
+        textInputButton.isHidden = true
+        textInputButton.addAction(UIAction { _ in
+            EKA2L1Bridge.shared.presentTextInput()
+        }, for: .touchUpInside)
+        addSubview(textInputButton)
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    // The presented guest picture in this view's coordinate space, for the
+    // layout editor's outline. Empty until the first frame is presented.
+    var guestPictureFrame: CGRect {
+        let scale = renderScale
+        guard scale > 0 else { return .zero }
+        return EKA2L1Bridge.shared.guestDisplayRect.applying(
+            CGAffineTransform(scaleX: 1 / scale, y: 1 / scale))
+    }
+
+    // Fullscreen takes the whole surface and ignores the stored layout; otherwise the
+    // picture is fitted into the safe area.
+    private func pushDisplayLayout() {
+        let scale = renderScale
+        guard bounds.width > 0, bounds.height > 0, scale > 0 else { return }
+        let layout = fullscreenLayout ? .fullscreen : displayLayout
+        let content = fullscreenLayout ? bounds : bounds.inset(by: safeAreaInsets)
+        EKA2L1Bridge.shared.setDisplayLayout(
+            content: content.applying(CGAffineTransform(scaleX: scale, y: scale)),
+            scale: layout.scale,
+            gravity: layout.gravity.rawIndex,
+            offset: CGPoint(x: layout.offsetX * bounds.width * scale,
+                            y: layout.offsetY * bounds.height * scale))
     }
 
     override func layoutSubviews() {
@@ -319,10 +398,25 @@ private final class EKA2L1RenderView: UIView {
         guard pixels.width > 0, pixels.height > 0 else { return }
 
         EKA2L1Bridge.shared.attach(layer: eaglLayer, pixelSize: pixels, scale: scale)
-        EKA2L1Bridge.shared.setDisplayAnchorTop(
-            pixels: anchorsDisplayTop ? Int(safeAreaInsets.top * scale) : -1)
+        pushDisplayLayout()
         pushInterfaceRotation()
         surfaceReady = true
+        updateTextInputButton()
+    }
+
+    private func updateTextInputButton() {
+        textInputButton.isHidden = !textInputEnabled || !textInputAvailable
+        guard !textInputButton.isHidden else { return }
+        let rightInset = max(safeAreaInsets.right, 12)
+        let leftInset = max(safeAreaInsets.left, 12)
+        let availableWidth = max(0, bounds.width - leftInset - rightInset)
+        let size = textInputButton.sizeThatFits(CGSize(width: availableWidth, height: bounds.height))
+        let width = min(size.width, availableWidth)
+        textInputButton.frame = CGRect(
+            x: bounds.maxX - rightInset - width,
+            y: bounds.minY + max(safeAreaInsets.top, 12),
+            width: width, height: max(44, size.height)
+        )
     }
 
     // CoreMotion reports accelerometer samples in the physical device frame;
@@ -420,12 +514,21 @@ final class EmulatorViewController: UIViewController {
     // Invoked when the guest app exits on its own (Exit soft key / panic /
     // normal termination) so the SwiftUI host can pop this screen.
     var onAppExit: ((String?) -> Void)?
-    // Forwarded to the render view; see EKA2L1RenderView.anchorsDisplayTop.
-    var anchorsDisplayTop = false {
+    // Whether the keypad overlay is hidden: it enables the on-screen controller
+    // pointer and takes the picture fullscreen.
+    var fullscreenLayout = false {
         didSet {
-            peripheralInput.setFullscreen(!anchorsDisplayTop)
+            peripheralInput.setFullscreen(fullscreenLayout)
             if isViewLoaded {
-                gameView.anchorsDisplayTop = anchorsDisplayTop
+                gameView.fullscreenLayout = fullscreenLayout
+            }
+        }
+    }
+    // Forwarded to the render view; see EKA2L1RenderView.displayLayout.
+    var displayLayout = DisplayLayoutConfiguration.standard(landscape: false) {
+        didSet {
+            if isViewLoaded {
+                gameView.displayLayout = displayLayout
             }
         }
     }
@@ -436,6 +539,11 @@ final class EmulatorViewController: UIViewController {
                 gameView.keypadHitRegions = keypadHitRegions
             }
         }
+    }
+    // Where the guest picture currently lands, for the display-layout editor's
+    // outline; see EKA2L1RenderView.guestPictureFrame.
+    var guestPictureFrame: CGRect {
+        isViewLoaded ? gameView.guestPictureFrame : .zero
     }
     private var launched = false
     private let peripheralInput = PeripheralInputBridge()
@@ -467,7 +575,8 @@ final class EmulatorViewController: UIViewController {
     override func loadView() {
         let renderView = EKA2L1RenderView(frame: UIScreen.main.bounds)
         renderView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        renderView.anchorsDisplayTop = anchorsDisplayTop
+        renderView.displayLayout = displayLayout
+        renderView.fullscreenLayout = fullscreenLayout
         renderView.keypadHitRegions = keypadHitRegions
         view = renderView
     }
@@ -481,6 +590,7 @@ final class EmulatorViewController: UIViewController {
     // handles the hardware keyboard on its own.
     func setHardwareKeyboardCaptureEnabled(_ enabled: Bool) {
         peripheralInput.setKeyboardEnabled(enabled)
+        gameView.textInputEnabled = enabled
     }
 
     override func viewDidAppear(_ animated: Bool) {
@@ -492,6 +602,9 @@ final class EmulatorViewController: UIViewController {
         }
         ExternalDisplay.shared.setGameVisible(true)
         peripheralInput.start()
+        EKA2L1Bridge.shared.setTextInputAvailabilityHandler { [weak self] available in
+            self?.gameView.textInputAvailable = available
+        }
         EKA2L1Bridge.shared.resume()
         // Launch once: viewDidAppear can re-fire (e.g. returning frontmost),
         // and re-launching would spawn a second guest instance.
@@ -511,6 +624,8 @@ final class EmulatorViewController: UIViewController {
         ExternalDisplay.shared.onSurfaceChange = nil
         ExternalDisplay.shared.setGameVisible(false)
         peripheralInput.stop()
+        EKA2L1Bridge.shared.setTextInputAvailabilityHandler(nil)
+        gameView.textInputAvailable = false
         EKA2L1Bridge.shared.detachLayer()
     }
 

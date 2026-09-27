@@ -44,6 +44,7 @@ add_library(epocservs
         include/services/internet/protocols/inet.h
         include/services/internet/protocols/overall.h
         include/services/internet/browser.h
+        include/services/internet/accesspoints.h
         include/services/internet/connmonitor.h
         include/services/internet/nifman.h
         include/services/domain/domain.h
@@ -109,6 +110,8 @@ add_library(epocservs
         include/services/remcon/remcon.h
         include/services/remcon/target.h
         include/services/sensor/sensor.h
+        include/services/memorymanager/memorymanager.h
+        include/services/linnea/linnea.h
         include/services/shutdown/shutdown.h
         include/services/sisregistry/common.h
         include/services/sisregistry/sisregistry.h
@@ -200,6 +203,7 @@ add_library(epocservs
         src/internet/protocols/resolver.cpp
         src/internet/protocols/socket.cpp
         src/internet/browser.cpp
+        src/internet/accesspoints.cpp
         src/internet/connmonitor.cpp
         src/internet/nifman.cpp
         src/domain/domain.cpp
@@ -262,6 +266,8 @@ add_library(epocservs
         src/remcon/remcon.cpp
         src/remcon/target.cpp
         src/sensor/sensor.cpp
+        src/memorymanager/memorymanager.cpp
+        src/linnea/linnea.cpp
         src/shutdown/shutdown.cpp
         src/sisregistry/sisregistry.cpp
         src/sms/mtm/factory.cpp
@@ -359,12 +365,15 @@ target_link_libraries(epocservs PRIVATE
         xxHash
         pugixml
         sqlite3
-        re2::re2)
+        re2::re2
+        mbedcrypto)
 
 if (WIN32)
         target_link_libraries(epocservs PRIVATE Ws2_32.lib)
 endif()
 
 if (APPLE)
-        target_sources(epocservs PRIVATE src/bluetooth/protocols/bonjour.cpp)
+        target_sources(epocservs PRIVATE src/bluetooth/protocols/mdns_dnssd.cpp)
+else()
+        target_sources(epocservs PRIVATE src/bluetooth/protocols/mdns_socket.cpp)
 endif()

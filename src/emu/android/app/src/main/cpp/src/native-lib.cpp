@@ -25,6 +25,7 @@
 #include <common/android/storage.h>
 #include <common/fileutils.h>
 #include <common/path.h>
+#include <config/config.h>
 #include <drivers/audio/audio.h>
 #include <drivers/camera/backend/android/emulator_camera_jni_public.h>
 #include <drivers/camera/camera_collection.h>
@@ -197,6 +198,11 @@ Java_com_github_eka2l1_emu_Emulator_setDeviceName(JNIEnv *env, jclass clazz, jin
     env->ReleaseStringUTFChars(new_name, cstr);
 }
 
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_github_eka2l1_emu_Emulator_deleteDevice(JNIEnv *env, jclass clazz, jint id) {
+    return state->launcher->delete_device(id);
+}
+
 extern "C" JNIEXPORT void JNICALL
 Java_com_github_eka2l1_emu_Emulator_rescanDevices(JNIEnv *env, jclass clazz) {
     state->launcher->rescan_devices();
@@ -209,7 +215,7 @@ Java_com_github_eka2l1_emu_Emulator_getCurrentDevice(JNIEnv *env, jclass clazz) 
 
 extern "C" JNIEXPORT jint JNICALL
 Java_com_github_eka2l1_emu_Emulator_installDevice(JNIEnv *env, jclass clazz, jstring rpkg_path,
-    jstring rom_path, jboolean install_rpkg) {
+    jstring rom_path, jboolean install_rpkg, jboolean isolate_drives) {
     const char *cstr = env->GetStringUTFChars(rpkg_path, nullptr);
     std::string crpkg_path = std::string(cstr);
     env->ReleaseStringUTFChars(rpkg_path, cstr);
@@ -217,7 +223,7 @@ Java_com_github_eka2l1_emu_Emulator_installDevice(JNIEnv *env, jclass clazz, jst
     std::string crom_path = std::string(cstr);
     env->ReleaseStringUTFChars(rom_path, cstr);
 
-    return state->launcher->install_device(crpkg_path, crom_path, install_rpkg);
+    return state->launcher->install_device(crpkg_path, crom_path, install_rpkg, isolate_drives);
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
@@ -259,6 +265,26 @@ Java_com_github_eka2l1_emu_Emulator_mountSdCard(JNIEnv *env, jclass clazz, jstri
 extern "C" JNIEXPORT void JNICALL
 Java_com_github_eka2l1_emu_Emulator_loadConfig(JNIEnv *env, jclass clazz) {
     state->launcher->load_config();
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_github_eka2l1_emu_Emulator_validHostMapping(JNIEnv *env, jclass clazz, jstring hostname, jstring target) {
+    if (!hostname || !target) {
+        return JNI_FALSE;
+    }
+    const char *name = env->GetStringUTFChars(hostname, nullptr);
+    if (!name) {
+        return JNI_FALSE;
+    }
+    const std::string name_copy(name);
+    env->ReleaseStringUTFChars(hostname, name);
+    const char *address = env->GetStringUTFChars(target, nullptr);
+    if (!address) {
+        return JNI_FALSE;
+    }
+    const bool valid = eka2l1::config::valid_host_pattern(name_copy) && eka2l1::config::valid_host_target(address);
+    env->ReleaseStringUTFChars(target, address);
+    return valid;
 }
 
 extern "C" JNIEXPORT void JNICALL

@@ -16,6 +16,7 @@ struct SettingsView: View {
     @State private var nearestNeighborFiltering = true
     @State private var hideSystemApps = true
     @State private var useJIT = false
+    @State private var performanceMode = "balanced"
     @State private var availableLanguages: [EKA2L1LanguageItem] = []
     @State private var systemLanguageCode = -1
 
@@ -54,6 +55,10 @@ struct SettingsView: View {
                         }
                     }
                 }
+                Picker("settings.performanceMode", selection: $performanceMode) {
+                    Text("settings.performanceMode.high").tag("high-performance")
+                    Text("settings.performanceMode.balanced").tag("balanced")
+                }
             }
             // Only sideload/simulator builds carry the dynarmic JIT; App Store /
             // TestFlight builds compile without it and never show this section.
@@ -81,6 +86,11 @@ struct SettingsView: View {
             } header: {
                 Text(verbatim: "AirPlay")
             }
+            Section("settings.network") {
+                NavigationLink("settings.hosts.title") {
+                    HostOverridesView()
+                }
+            }
             Section {
                 Picker("settings.netplay.discoveryMode", selection: $btDiscoveryMode) {
                     Text("settings.netplay.mode.off").tag(0)
@@ -88,8 +98,8 @@ struct SettingsView: View {
                     Text("settings.netplay.mode.lan").tag(2)
                     Text("settings.netplay.mode.server").tag(3)
                 }
-                // LAN discovery uses its fixed harbour port. Direct IP and a
-                // current central server can advertise a configurable port.
+                // LAN discovery advertises its port over mDNS. Direct IP
+                // and a current central server can use a configurable port.
                 if btDiscoveryMode == 1 || btDiscoveryMode == 3 {
                     LabeledContent("settings.netplay.listenPort") {
                         TextField(String("35689"), value: $btListenPort, format: .number.grouping(.never))
@@ -196,6 +206,7 @@ struct SettingsView: View {
         }
         .onChange(of: friendlyPhoneName) { _ in save() }
         .onChange(of: useJIT) { _ in save() }
+        .onChange(of: performanceMode) { _ in save() }
         .onChange(of: integerScaling) { _ in save() }
         .onChange(of: nearestNeighborFiltering) { _ in save() }
         .onChange(of: hideSystemApps) { _ in save() }
@@ -256,6 +267,8 @@ struct SettingsView: View {
         if let value = snapshot["jitEnabled"] as? NSNumber {
             useJIT = value.boolValue
         }
+        // Anything the bridge doesn't recognise runs as balanced.
+        performanceMode = snapshot["performanceMode"] as? String == "high-performance" ? "high-performance" : "balanced"
         friendlyPhoneName = snapshot["deviceDisplayName"] as? String ?? ""
         availableLanguages = EKA2L1Bridge.shared.availableLanguages()
         systemLanguageCode = EKA2L1Bridge.shared.currentLanguageCode()
@@ -287,6 +300,7 @@ struct SettingsView: View {
             "nearestNeighborFiltering": nearestNeighborFiltering,
             "hideSystemApps": hideSystemApps,
             "jitEnabled": useJIT && EKA2L1Bridge.shared.jitCompiledIn,
+            "performanceMode": performanceMode,
             "btnetDiscoveryMode": btDiscoveryMode,
             "btnetListenPort": min(max(btListenPort, 1), 65535),
             "btnetPassword": btPassword,

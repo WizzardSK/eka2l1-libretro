@@ -288,7 +288,17 @@ namespace eka2l1::epoc {
     }
 
     bool canvas_base::is_visible() const {
-        return ((flags & flags_active) && (flags & flags_visible));
+        if (!(flags & flags_active) || !(flags & flags_visible)) {
+            return false;
+        }
+
+        // WSERV folds the parent's state into the child's hidden flag: a client window
+        // whose client parent is hidden is hidden too (CWsClientWindow::ResetHiddenFlag).
+        if (parent && (parent->type == window_kind::client)) {
+            return reinterpret_cast<const canvas_base *>(parent)->is_visible();
+        }
+
+        return true;
     }
 
     eka2l1::rect canvas_base::bounding_rect() const {
@@ -543,26 +553,17 @@ namespace eka2l1::epoc {
 
             fps_count_++;
 
-            // A client (partial) redraw only repaints this window and does not
-            // recomposite the windows stacked on top of it. When this window is
-            // partially occluded (its visible region is fragmented rather than
-            // its whole bounding rect), a client-only redraw would bleed into
-            // the occluding windows' area and leave it stale, because those
-            // windows have no client content to repaint over it. This happens
-            // e.g. with a live camera viewfinder redrawing every frame beneath a
-            // stationary Avkon menu pane. Escalate to a full server recomposite
-            // so the occluding windows are redrawn on top, back-to-front.
-            bool fully_visible = false;
-            if (!visible_region.empty()) {
-                if (flags & flag_shape_region) {
-                    fully_visible = visible_region.identical(shape_region);
-                } else {
-                    fully_visible = (visible_region.rects_.size() == 1) &&
-                        (visible_region.rects_[0] == bounding_rect());
-                }
+            // Only occlusion by another window needs recomposition; screen-edge
+            // clipping leaves no foreground window to repaint.
+            common::region onscreen_region;
+            if (flags & flag_shape_region) {
+                onscreen_region = shape_region;
+            } else {
+                onscreen_region.add_rect(abs_rect);
             }
+            onscreen_region.clip(eka2l1::rect({ 0, 0 }, scr->current_mode().size));
 
-            if (!visible_region.empty() && !fully_visible) {
+            if (!visible_region.empty() && !visible_region.identical(onscreen_region)) {
                 scr->flags_ |= screen::FLAG_SERVER_REDRAW_PENDING;
             }
 
@@ -1371,7 +1372,8 @@ namespace eka2l1::epoc {
 
         gdi_store_command_segment *current_segment = redraw_segments_.get_current_segment();
         current_segment->add_command(command);
-        if (created_non_redraw_segment || (flags & flags_enable_alpha)) {
+        // Without redraw storing, earlier pixels may exist only in the screen bitmap.
+        if ((created_non_redraw_segment && !client->get_ws().no_redraw_storing_enabled()) || (flags & flags_enable_alpha)) {
             scr->flags_ |= screen::FLAG_SERVER_REDRAW_PENDING;
         }
 

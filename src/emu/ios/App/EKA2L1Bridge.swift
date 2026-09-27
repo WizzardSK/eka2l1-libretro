@@ -94,6 +94,11 @@ final class EKA2L1Bridge {
         emulator.currentDeviceIndex()
     }
 
+    // Host folder behind drive E of the booted device, nil when none is booted.
+    nonisolated static func currentDeviceDriveEPath() -> String? {
+        EKA2L1Emulator.shared().currentDeviceDriveEPath()
+    }
+
     // Rename an installed device (updates its model + devices.yml).
     @discardableResult
     func renameDevice(at index: Int, to name: String) -> Bool {
@@ -118,20 +123,20 @@ final class EKA2L1Bridge {
     // the frontend can run them off the main queue while a spinner shows. The
     // Obj-C side serialises against the emulator loop internally.
     // `progress` (0…1) and `cancelCheck` are both called on this thread while
-    // the install runs — see installDeviceWithRomPath:rpkgPath:progress:cancelCheck:.
-    nonisolated static func installDevice(romPath: String, rpkgPath: String?,
+    // the install runs — see installDeviceWithRomPath:rpkgPath:isolateDrives:progress:cancelCheck:.
+    nonisolated static func installDevice(romPath: String, rpkgPath: String?, isolateDrives: Bool,
                                           progress: (@Sendable (Double) -> Void)? = nil,
                                           cancelCheck: (@Sendable () -> Bool)? = nil) -> EKA2L1InstallResult {
-        EKA2L1Emulator.shared().installDevice(romPath: romPath, rpkgPath: rpkgPath,
+        EKA2L1Emulator.shared().installDevice(romPath: romPath, rpkgPath: rpkgPath, isolateDrives: isolateDrives,
                                               progress: progress, cancelCheck: cancelCheck)
     }
 
     // Same, from a .7z holding either a ROM/RPKG pair or an already-unpacked
-    // device — see installDeviceWithArchivePath:progress:cancelCheck:.
-    nonisolated static func installDevice(archivePath: String,
+    // device — see installDeviceWithArchivePath:isolateDrives:progress:cancelCheck:.
+    nonisolated static func installDevice(archivePath: String, isolateDrives: Bool,
                                           progress: (@Sendable (Double) -> Void)? = nil,
                                           cancelCheck: (@Sendable () -> Bool)? = nil) -> EKA2L1InstallResult {
-        EKA2L1Emulator.shared().installDevice(archivePath: archivePath,
+        EKA2L1Emulator.shared().installDevice(archivePath: archivePath, isolateDrives: isolateDrives,
                                               progress: progress, cancelCheck: cancelCheck)
     }
 
@@ -185,6 +190,14 @@ final class EKA2L1Bridge {
     // leaves via Exit soft key, panic, or normal termination.
     func setAppExitHandler(_ handler: ((String?) -> Void)?) {
         emulator.appExitHandler = handler
+    }
+
+    func presentTextInput() {
+        emulator.presentTextInput()
+    }
+
+    func setTextInputAvailabilityHandler(_ handler: ((Bool) -> Void)?) {
+        emulator.setTextInputAvailabilityHandler(handler)
     }
 
     // Kill the running app in lockstep with the frontend closing its screen.
@@ -292,11 +305,9 @@ final class EKA2L1Bridge {
         emulator.currentDeviceIsEKA1()
     }
 
-    // Anchor the presented guest picture's top edge at `pixels` from the top of
-    // the render surface (negative = centred). Used to keep the picture clear
-    // of a bottom keypad overlay.
-    func setDisplayAnchorTop(pixels: Int) {
-        emulator.setDisplayAnchorTopPixels(pixels)
+    // Place the guest picture on the render surface; see IosEmulator.h.
+    func setDisplayLayout(content: CGRect, scale: CGFloat, gravity: Int, offset: CGPoint) {
+        emulator.setDisplayLayoutContentRect(content, scale: scale, gravity: gravity, offset: offset)
     }
 
     // Report the emulator screen's interface orientation so accelerometer

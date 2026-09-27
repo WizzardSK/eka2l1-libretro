@@ -1,5 +1,5 @@
 set(CORE_TEST_FILES
-    ${CMAKE_CURRENT_SOURCE_DIR}/services/bluetooth/bonjour.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/services/bluetooth/mdns.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/services/bluetooth/suspend.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/devices.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/drivers/audio.cpp
@@ -10,6 +10,7 @@ set(CORE_TEST_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/kernel/timer.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/loader/e32img.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/loader/gdr.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/loader/sis_old.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/loader/mbm.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/loader/mif.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/loader/nvg.cpp
@@ -22,6 +23,7 @@ set(CORE_TEST_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/services/applist/language.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/services/applist/registeration.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/services/applist/recognize.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/services/applist/data_type.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/services/fbs/bitmap.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/services/fbs/fontmatch.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/services/fbs/linkedfont.cpp
@@ -29,10 +31,16 @@ set(CORE_TEST_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/services/sensor/buffering.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/services/sensor/rotation.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/services/window/surface.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/services/window/scale.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/services/window/protocol.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/services/centralrepo/crebinloader.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/services/domain/domain.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/services/framework/objects.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/services/internet/accesspoints.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/services/internet/address.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/services/internet/connmonitor.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/services/internet/tls.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/services/loader.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/services/timezone/rules.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/services/centralrepo/creiniloader.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/services/sms/common.cpp
