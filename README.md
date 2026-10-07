@@ -6,7 +6,7 @@ The emulator is upstream's: this repository follows EKA2L1's `master` and adds t
 
 ## Downloads
 
-Builds for Windows, Linux (x86_64, arm64), macOS (Apple Silicon, Intel) and Android (arm64-v8a, x86_64) are on the [Releases](https://github.com/WizzardSK/eka2l1-libretro/releases) page.
+Builds for Windows, Linux (x86_64, arm64), macOS (Apple Silicon, Intel) and Android (arm64-v8a) are on the [Releases](https://github.com/WizzardSK/eka2l1-libretro/releases) page.
 
 ## Setup
 
