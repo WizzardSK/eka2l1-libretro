@@ -65,3 +65,8 @@ set_target_properties(eka2l1_libretro PROPERTIES
 if (UNIX AND NOT APPLE)
     target_link_options(eka2l1_libretro PRIVATE -Wl,-Bsymbolic)
 endif()
+
+# The GL loader asks EGL for the functions on Android
+if (ANDROID)
+    target_link_libraries(eka2l1_libretro PRIVATE EGL GLESv3 log android)
+endif()
