@@ -58,3 +58,10 @@ set_target_properties(eka2l1_libretro PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
     LIBRARY_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}/bin"
     LIBRARY_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/bin")
+
+# On Linux and Android the core binds its own symbols inside itself: the
+# frontend's libraries do not stand in for them, and FFmpeg's x86 assembly,
+# which refers to its tables directly, links into a shared object
+if (UNIX AND NOT APPLE)
+    target_link_options(eka2l1_libretro PRIVATE -Wl,-Bsymbolic)
+endif()

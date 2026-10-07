@@ -125,6 +125,12 @@ if (EKA2L1_SANITIZER)
 endif()
 
 
+if (ANDROID)
+    # The bundled fmt's format.h calls malloc and free without including
+    # <cstdlib>, which the NDK's libc++ headers do not bring in on their own
+    add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:SHELL:-include cstdlib>")
+endif()
+
 if (APPLE OR ANDROID)
     # The bundled boost (pulled in by dynarmic) still uses std::unary_function,
     # which libc++ (Apple's, and the NDK's) no longer declares in C++17 and
