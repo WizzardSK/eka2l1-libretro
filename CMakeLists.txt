@@ -15,9 +15,8 @@ endif()
 
 set(EKA2L1_IOS_DEPLOYMENT_TARGET "16.0" CACHE STRING "Minimum iOS version to target")
 
-option(EKA2L1_BUILD_LIBRETRO "Build the libretro core instead of a desktop frontend" OFF)
-option(EKA2L1_BUILD_TOOLS "Build EKA2L1's tool" ON)
-option(EKA2L1_BUILD_TESTS "Build EKA2L1's tests" ON)
+# This repository builds the libretro core only (.upstream-excluded)
+set(EKA2L1_BUILD_LIBRETRO ON)
 option(EKA2L1_ENABLE_SCRIPTING_ABILITY "Enable to script with Python or Lua" ON)
 option(EKA2L1_SCRIPTING_LUA "Use the LuaJIT runtime for scripting. When OFF, only the built-in native patches are compiled (no runtime script loading)." ON)
 option(EKA2L1_ENABLE_UNEXPECTED_EXCEPTION_HANDLER "Enable EKA2L1 to dump unexpected exception" OFF)
@@ -136,8 +135,6 @@ endif()
 # it pulls in has to be built position independent.
 if (EKA2L1_BUILD_LIBRETRO)
     set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-    set(EKA2L1_BUILD_TOOLS OFF CACHE BOOL "Not built for the libretro core" FORCE)
-    set(EKA2L1_BUILD_TESTS OFF CACHE BOOL "Not built for the libretro core" FORCE)
 endif()
 
 if (EKA2L1_BUILD_VULKAN_BACKEND)
@@ -174,11 +171,4 @@ add_subdirectory(src/patch)
 add_subdirectory(src/external)
 add_subdirectory(src/emu)
 
-if (EKA2L1_BUILD_TOOLS)
-    add_subdirectory(src/tools)
-endif()
 
-if (EKA2L1_BUILD_TESTS)
-    enable_testing()
-    add_subdirectory(src/tests)
-endif()

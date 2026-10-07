@@ -1,9 +1,0 @@
-<RCC>
-    <qresource prefix="/">
-        <file>assets/duck_tank.png</file>
-        <file>assets/credits.yml</file>
-        <file>assets/duck_tank_fedora.png</file>
-        <file>assets/update_notices/20230502_update_notice.png</file>
-        <file>assets/loading.gif</file>
-    </qresource>
-</RCC>

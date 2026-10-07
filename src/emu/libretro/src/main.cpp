@@ -110,7 +110,7 @@ RETRO_API unsigned retro_api_version(void) { return RETRO_API_VERSION; }
 RETRO_API void retro_get_system_info(struct retro_system_info *info) {
     std::memset(info, 0, sizeof(*info));
     info->library_name = "EKA2L1";
-    info->library_version = CURRENT_EKA2L1_VERSION_STRING;
+    info->library_version = CURRENT_EKA2L1_VERSION_STRING " " EKA2L1_UPSTREAM_COMMIT;
     // A package to install and launch, or a shortcut naming what is already
     // installed - see CONTENT_MODEL.md.
     info->valid_extensions = "sis|sisx|n-gage|eka2l1";

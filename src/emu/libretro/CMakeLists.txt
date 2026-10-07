@@ -37,8 +37,23 @@ target_link_libraries(eka2l1_libretro PRIVATE
     yaml-cpp)
 
 # Libretro cores are named <core>_libretro.so, with no "lib" prefix.
+# The version reported is upstream's, with the upstream commit this core is
+# rebased on, from upstream.version
+file(STRINGS "${PROJECT_SOURCE_DIR}/upstream.version" EKA2L1_UPSTREAM_COMMIT LIMIT_COUNT 1)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${PROJECT_SOURCE_DIR}/upstream.version")
+target_compile_definitions(eka2l1_libretro PRIVATE
+    EKA2L1_UPSTREAM_COMMIT="${EKA2L1_UPSTREAM_COMMIT}")
+
+# RetroArch's names: eka2l1_libretro_android.so on Android
+if (ANDROID)
+    set(EKA2L1_LIBRETRO_NAME eka2l1_libretro_android)
+else()
+    set(EKA2L1_LIBRETRO_NAME eka2l1_libretro)
+endif()
+
 set_target_properties(eka2l1_libretro PROPERTIES
-    OUTPUT_NAME eka2l1_libretro
+    OUTPUT_NAME ${EKA2L1_LIBRETRO_NAME}
     PREFIX ""
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
     LIBRARY_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}/bin"

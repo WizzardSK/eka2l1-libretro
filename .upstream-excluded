@@ -1,0 +1,14 @@
+.github/workflows/build.yml
+Doxyfile
+changelog.txt
+crowdin.yml
+miscs
+native
+screenshots
+scripts
+src/emu/android
+src/emu/ios
+src/emu/qt
+src/intests
+src/tests
+src/tools

@@ -1,65 +1,37 @@
-<div class="header">
-  <p align="center">
-     <img src="https://i.imgur.com/FasrbKV.png" width="256">
-     <!-- Margin not working for some reasons! Tried to fix it by searching but not working! Feel free to submit a patch! -->
-     &nbsp;
-     <!-- Old link: https://femto.pw/rasu.gif -->
-     <img src="https://raw.githubusercontent.com/EKA2L1/eka2l1.github.io/main/assets/main/logo.gif">
-  </p>
+# EKA2L1 libretro core
 
-  <p align="center">
-    <a href="https://github.com/EKA2L1/EKA2L1/actions?query=branch%3Amaster"><img src="https://github.com/eka2l1/eka2l1/workflows/C/C++%20CI/badge.svg"></a>
-    <a href="https://crowdin.com/project/eka2l1"><img src="https://badges.crowdin.net/eka2l1/localized.svg"></a>
-  </p>
+A [libretro](https://www.libretro.com/) core of [EKA2L1](https://github.com/EKA2L1/EKA2L1), the Symbian OS and N-Gage emulator, for RetroArch and other libretro frontends.
 
-  <h3 align="center">Symbian OS/N-Gage emulator, written in C++ 17.</h3>
-</div>
+The emulator is upstream's: this repository follows EKA2L1's `master` and adds the libretro frontend in `src/emu/libretro`. It holds the core only; upstream's Qt, Android and iOS apps, its tests and tools are not part of it (the paths are listed in `.upstream-excluded`). The version the core reports is upstream's, with the upstream commit it is rebased on (`upstream.version`).
 
----
+## Downloads
 
-The emulator *emulates* Symbian OS/N-Gage's kernel, and *reimplement* most of its critical app servers and libraries. 
+Builds for Windows, Linux (x86_64, arm64), macOS (Apple Silicon, Intel) and Android (arm64-v8a, x86_64) are on the [Releases](https://github.com/WizzardSK/eka2l1-libretro/releases) page.
 
-### Download Builds/Artifacts:
+## Setup
 
-- Builds/Artifacts for Windows, OSX, Linux and Android are provided through Github Actions. Click on the [***Releases***](https://github.com/EKA2L1/EKA2L1/releases/tag/continous) section to get the newest stable build.
+The core needs a device made from a firmware dump of a Symbian phone or an N-Gage, which you have to dump yourself:
 
-    - **Note:** There's no official maintainer for OSX and Linux versions of the emulator. Please report to the developers through issues if versions for these OSes are not working.
+- Put the firmware (an RPKG, or a ROM with its ROFS images) into RetroArch's system directory, under `system/eka2l1/firmware/`. The core installs it the first time it starts.
 
-### Compatibility:
-- At the moment the emulator supports:
-    - Almost all official N-Gage/N-Gage 2.0 official libraries
-    - Most of Symbian's game libraries from S60v1 to Symbian Belle
-    - A limited subsets of Symbian applications.
+## Content
 
-- Compatibility for the games and software that can (and can't) run on the emulator can be verified [**here**](https://github.com/EKA2L1/Compatibility-List)
+- `.n-gage`, `.sis`, `.sisx`: the core installs the package onto the device and launches it.
+- `.eka2l1`: a small text file naming an application that is installed already, as `uid: 0x<application UID>`.
 
-### Links
+How a Symbian title is mapped onto the single file a frontend hands a core is described in [src/emu/libretro/CONTENT_MODEL.md](src/emu/libretro/CONTENT_MODEL.md).
 
-For more information, discussion and support, please visit these links:
+## Building
 
-- [**Homepage**](https://eka2l1.github.io/)
-- [**Emulator Wiki**](https://eka2l1.miraheze.org/wiki/Main_Page)
-- [**Discord server**](https://discord.gg/5Bm5SJ9)
+```
+git clone --recursive https://github.com/WizzardSK/eka2l1-libretro.git
+cd eka2l1-libretro
+cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCI=ON -DEKA2L1_SCRIPTING_LUA=OFF
+cmake --build build --target eka2l1_libretro
+```
 
-### Screenshots
+The core is `build/bin/eka2l1_libretro.so` (`.dll`, `.dylib`). The CI workflow `.github/workflows/libretro.yml` builds every platform.
 
-Calculator (5530)                                               |  High Seize                                                   |          Dirk Dagger
-:--------------------------------------------------------------:|:-------------------------------------------------------------:|:-----------------------------------------------:
-![calculator](screenshots/0.0.8/screenshot_008_calculator.jpg)  | ![highseize](screenshots/0.0.8/screenshot_008_highseize.jpg)  | ![dirkdagger1](screenshots/0.0.8/screenshot_008_dirkdagger1.jpg)
+## License
 
-The Big Roll in Paradise                                 | Mega Monster       
-:-------------------------------------------------------:|:-----------------------------------------------------------------:
-![BigRoll](screenshots/0.0.8/screenshot_008_bigroll.jpg) | ![MegaMonster](screenshots/0.0.8/screenshot_008_megamonster.jpg)
-
-### Donations
-
-From 2022, developing the emulator has shifted to become a part-time hobby and sometimes not actively maintained in months, since the compatibility for most popular games and Symbian operating systems have been satisfied.
-
-Still, if you feel like our work has benefited you much and you want to support or give us some cheers, feel free to donate to two developers that maintain the PC/Android version by visiting the **Sponsor this project** section of the Github page.
-
-Visit this [link](https://eka2l1.github.io/quickstart/donation/) for more information.
-
-  -------------
- *GIFs are provided by [**Stranno**](https://www.youtube.com/user/9esferas1)!*
- 
- *Logo is designed and drawn by dmolina007 and Frenesi!*
+GPL-3.0, as EKA2L1. See [LICENSE](LICENSE).
