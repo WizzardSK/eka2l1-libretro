@@ -125,9 +125,10 @@ if (EKA2L1_SANITIZER)
 endif()
 
 
-if (APPLE)
+if (APPLE OR ANDROID)
     # The bundled boost (pulled in by dynarmic) still uses std::unary_function,
-    # which libc++ no longer declares in C++17 and later modes.
+    # which libc++ (Apple's, and the NDK's) no longer declares in C++17 and
+    # later modes.
     add_compile_definitions(_LIBCPP_ENABLE_CXX17_REMOVED_UNARY_BINARY_FUNCTION=1)
 endif()
 

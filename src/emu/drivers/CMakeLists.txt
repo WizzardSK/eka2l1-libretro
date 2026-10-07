@@ -276,13 +276,10 @@ if (APPLE)
 elseif (WIN32)
     target_sources(drivers PRIVATE src/network/tls_trust_windows.cpp)
     target_link_libraries(drivers PRIVATE crypt32)
-elseif (ANDROID)
-    target_sources(drivers PRIVATE src/network/tls_trust_android.cpp)
 else()
-    find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Network)
-    find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Network)
-    target_sources(drivers PRIVATE src/network/tls_trust_qt.cpp)
-    target_link_libraries(drivers PRIVATE Qt${QT_VERSION_MAJOR}::Network)
+    # Linux and Android: the core has neither Qt Network nor the Android
+    # app's Java side, so mbedtls checks against the system's authorities
+    target_sources(drivers PRIVATE src/network/tls_trust_mbedtls.cpp)
 endif()
 
 if (EKA2L1_IOS)

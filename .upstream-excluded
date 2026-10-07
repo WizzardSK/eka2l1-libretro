@@ -7,6 +7,8 @@ native
 screenshots
 scripts
 src/emu/android
+src/emu/drivers/src/network/tls_trust_android.cpp
+src/emu/drivers/src/network/tls_trust_qt.cpp
 src/emu/ios
 src/emu/qt
 src/intests

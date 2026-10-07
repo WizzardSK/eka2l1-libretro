@@ -82,8 +82,6 @@ namespace eka2l1::libretro {
 
         device_manager *dvcmngr = symsys->get_device_manager();
 
-        const std::string root_c = eka2l1::add_path(conf.storage, "drives/c/");
-        const std::string root_e = eka2l1::add_path(conf.storage, "drives/e/");
         const std::string root_z = eka2l1::add_path(conf.storage, "drives/z/");
         const std::string roms = eka2l1::add_path(conf.storage, "roms/");
 
@@ -93,11 +91,12 @@ namespace eka2l1::libretro {
 
         if (!vpl_path.empty()) {
             LOG_INFO(FRONTEND_CMDLINE, "Installing device from {}", vpl_path);
-            result = eka2l1::install_firmware(dvcmngr, vpl_path, root_c, root_e, root_z, roms,
+            // Drives shared between devices, as the Qt frontend's default
+            result = eka2l1::install_firmware(dvcmngr, vpl_path, conf.storage, roms, false,
                 [](const std::vector<std::string> &variants) -> int { return 0; }, nullptr, nullptr);
         } else {
             LOG_INFO(FRONTEND_CMDLINE, "Installing device from {}", rom_path);
-            result = eka2l1::loader::install_rom_with_optional_rpkg(dvcmngr, rom_path, rpkg_path, roms, root_z, nullptr, nullptr);
+            result = eka2l1::loader::install_rom_with_optional_rpkg(dvcmngr, rom_path, rpkg_path, roms, root_z, false, nullptr, nullptr);
         }
 
         if (result != device_installation_none) {
