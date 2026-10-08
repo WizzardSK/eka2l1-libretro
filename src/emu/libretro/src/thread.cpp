@@ -10,40 +10,28 @@
 #include <chrono>
 
 namespace eka2l1::libretro {
-    // EKA2L1 runs its own two threads and has no "run one frame" entry point,
-    // so a core cannot drive it a frame at a time. It waits for it instead:
-    // the graphics driver's display hook fires when a frame has been drawn,
-    // retro_run wakes on it, and the emulator carries on. The same shape the
-    // android frontend has, with presentation taken out - the frontend owns
-    // that.
+    // EKA2L1 runs its Symbian OS on a thread of its own and has no "run one
+    // frame" entry point, so a core cannot step it a frame at a time. Its
+    // graphics driver, though, only processes the command lists that thread
+    // submits, and GL may only be used on the thread the frontend's context is
+    // current on - so the driver lives there: created here (from
+    // context_reset) and run from retro_run, which processes lists until the
+    // emulator presents a frame.
     bool emulator::start(std::function<unsigned int()> framebuffer_getter) {
         if (!symsys) {
             return false;
         }
 
-        if (graphics_thread_ || os_thread_) {
+        if (graphics_driver_ || os_thread_) {
             return true;
         }
 
         should_quit_.store(false);
-
-        graphics_thread_ = std::make_unique<std::thread>([this, framebuffer_getter]() {
-            graphics_thread_main(framebuffer_getter);
-        });
-
-        os_thread_ = std::make_unique<std::thread>([this]() {
-            os_thread_main();
-        });
-
-        return true;
-    }
-
-    void emulator::graphics_thread_main(std::function<unsigned int()> framebuffer_getter) {
-        common::set_thread_name("EKA2L1 graphics");
+        frame_ready_ = false;
 
         // Where "the screen" is. The context does not create anything - the
-        // frontend's is already current on this thread - it only answers with
-        // the framebuffer the frontend wants drawn into, per frame.
+        // frontend's is current on this thread - it only answers with the
+        // framebuffer the frontend wants drawn into, per frame.
         drivers::graphics::gl_context_libretro::set_framebuffer_getter(framebuffer_getter);
 
         window_ = std::make_unique<drivers::emu_window_libretro>();
@@ -54,30 +42,46 @@ namespace eka2l1::libretro {
 
         if (!graphics_driver_) {
             LOG_ERROR(FRONTEND_CMDLINE, "Could not create the graphics driver");
-            return;
+            window_.reset();
+            return false;
         }
+
+        // A frame has been drawn into the frontend's framebuffer: run_frame
+        // stops there and hands it to the frontend.
+        graphics_driver_->set_display_hook([this]() {
+            frame_ready_ = true;
+        });
 
         symsys->set_graphics_driver(graphics_driver_.get());
 
-        graphics_driver_->set_display_hook([this]() {
-            // A frame has been drawn into the frontend's framebuffer. Wake
-            // retro_run, and wait until it has been presented before letting
-            // the emulator draw into the same framebuffer again.
-            std::unique_lock lock(frame_mutex_);
-            frame_ready_ = true;
-            frame_cv_.notify_all();
-
-            frame_cv_.wait_for(lock, std::chrono::milliseconds(100), [this]() {
-                return !frame_ready_ || should_quit_.load();
-            });
+        os_thread_ = std::make_unique<std::thread>([this]() {
+            os_thread_main();
         });
 
-        // Blocks, processing graphics commands, until the driver is aborted.
-        graphics_driver_->run();
+        return true;
+    }
 
-        symsys->set_graphics_driver(nullptr);
-        graphics_driver_.reset();
-        window_.reset();
+    bool emulator::run_frame() {
+        if (!graphics_driver_) {
+            return false;
+        }
+
+        frame_ready_ = false;
+
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(100);
+
+        while (!frame_ready_ && !should_quit_.load()) {
+            const auto left = std::chrono::duration_cast<std::chrono::microseconds>(deadline - std::chrono::steady_clock::now()).count();
+            if (left <= 0) {
+                break;
+            }
+
+            if (!graphics_driver_->run_once(static_cast<int>(left))) {
+                break;
+            }
+        }
+
+        return frame_ready_;
     }
 
     void emulator::os_thread_main() {
@@ -88,33 +92,12 @@ namespace eka2l1::libretro {
         }
     }
 
-    bool emulator::wait_for_frame() {
-        std::unique_lock lock(frame_mutex_);
-
-        // A title that draws nothing must not take the frontend down with it:
-        // retro_run has to return either way, and a frontend that gets no frame
-        // simply repeats the last one.
-        const bool got_frame = frame_cv_.wait_for(lock, std::chrono::milliseconds(100), [this]() {
-            return frame_ready_;
-        });
-
-        if (got_frame) {
-            frame_ready_ = false;
-            frame_cv_.notify_all();
-        }
-
-        return got_frame;
-    }
-
     void emulator::shut_down() {
         should_quit_.store(true);
 
-        {
-            std::lock_guard lock(frame_mutex_);
-            frame_ready_ = false;
-        }
-        frame_cv_.notify_all();
-
+        // Aborted first: the OS thread may be waiting on the driver for a
+        // command to finish, or for room in its queue, and returns from both
+        // once it is aborted.
         if (graphics_driver_) {
             graphics_driver_->abort();
         }
@@ -123,12 +106,15 @@ namespace eka2l1::libretro {
             os_thread_->join();
         }
 
-        if (graphics_thread_ && graphics_thread_->joinable()) {
-            graphics_thread_->join();
+        os_thread_.reset();
+
+        if (symsys) {
+            symsys->set_graphics_driver(nullptr);
         }
 
-        os_thread_.reset();
-        graphics_thread_.reset();
+        // Its GL objects go with the frontend's context still current
+        graphics_driver_.reset();
+        window_.reset();
 
         symsys.reset();
         app_settings.reset();

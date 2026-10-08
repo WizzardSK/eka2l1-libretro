@@ -50,21 +50,21 @@ namespace eka2l1::libretro {
         // and not a path to "the game".
         bool load_content(const std::string &path);
 
-        // Start the emulator's own two threads: one running the Symbian OS
-        // loop, one processing graphics commands. Neither is frame-stepped -
-        // EKA2L1 has no "run one frame" call - so retro_run does not drive
-        // them, it waits for them (see wait_for_frame).
-        //
-        // The graphics thread is the one that has to be started from the
-        // frontend's video thread, because that is where its GL context is
-        // current.
+        // Start the emulator: its graphics driver, on the calling thread - the
+        // frontend's, where its GL context is current, the only thread GL may
+        // be used from - and its Symbian OS thread. The OS thread is not
+        // frame-stepped (EKA2L1 has no "run one frame" call); it submits
+        // graphics command lists, which run_frame processes.
         bool start(std::function<unsigned int()> framebuffer_getter);
 
-        // Blocks until the emulator presents a frame, or until the timeout -
-        // a title that draws nothing must not take the frontend down with it.
-        // Returns false on the timeout.
-        bool wait_for_frame();
+        // On the frontend's thread, in retro_run: processes the command lists
+        // the OS thread submits until the emulator presents a frame, or until
+        // the timeout - a title that draws nothing must not take the frontend
+        // down with it. Returns false on the timeout.
+        bool run_frame();
 
+        // Stops the OS thread and frees the graphics driver; on the frontend's
+        // thread, while its context is still there.
         void shut_down();
 
         drivers::emu_window_libretro *window() { return window_.get(); }
@@ -82,19 +82,16 @@ namespace eka2l1::libretro {
 
         std::string data_root_;
 
-        void graphics_thread_main(std::function<unsigned int()> framebuffer_getter);
         void os_thread_main();
 
         std::unique_ptr<drivers::emu_window_libretro> window_;
         std::unique_ptr<drivers::graphics_driver> graphics_driver_;
 
         std::unique_ptr<std::thread> os_thread_;
-        std::unique_ptr<std::thread> graphics_thread_;
 
         std::atomic<bool> should_quit_{false};
 
-        std::mutex frame_mutex_;
-        std::condition_variable frame_cv_;
+        // Set by the display hook, which runs inside run_frame
         bool frame_ready_ = false;
     };
 }

@@ -210,6 +210,7 @@ namespace eka2l1::drivers {
         void submit_command_list(command_list &cmd_list) override;
 
         void run() override;
+        bool run_once(const int timeout_us) override;
         void abort() override;
         void dispatch(command &cmd) override;
         void bind_swapchain_framebuf() override;

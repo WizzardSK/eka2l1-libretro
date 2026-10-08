@@ -21,6 +21,7 @@
 
 #include <libretro.h>
 #include <libretro_state.h>
+#include <drivers/graphics/backend/context_libretro.h>
 
 #include <string>
 
@@ -145,10 +146,11 @@ RETRO_API void retro_run(void) {
         return;
     }
 
-    // The emulator is not frame-stepped, so this waits for it rather than
-    // driving it. A title that draws nothing still returns - the frontend then
-    // repeats the last frame, which is better than a frozen frontend.
-    const bool got_frame = emu.wait_for_frame();
+    // The Symbian OS is not frame-stepped; this runs its graphics, on the
+    // thread the frontend's context is current on, until it presents a frame.
+    // A title that draws nothing still returns - the frontend then repeats the
+    // last frame, which is better than a frozen frontend.
+    const bool got_frame = emu.run_frame();
 
     if (video_cb)
         video_cb(got_frame ? RETRO_HW_FRAME_BUFFER_VALID : nullptr, DEFAULT_WIDTH, DEFAULT_HEIGHT, 0);
@@ -156,8 +158,9 @@ RETRO_API void retro_run(void) {
 
 namespace {
     // The frontend's context exists from here until context_destroy, and this
-    // is the thread it is current on - so this is where the emulator's own
-    // threads may start, and where they have to stop.
+    // is the thread it is current on - so this is where the emulator's
+    // graphics driver is made, and its OS thread started, and where they have
+    // to stop.
     void context_reset() {
         if (log_cb)
             log_cb(RETRO_LOG_INFO, "Frontend GL context ready\n");
@@ -169,6 +172,8 @@ namespace {
                 log_cb(RETRO_LOG_ERROR, "No device installed - not starting the emulator.\n");
             return;
         }
+
+        eka2l1::drivers::graphics::gl_context_libretro::set_proc_address_getter(hw_render.get_proc_address);
 
         emulator_started = emu.start([]() -> unsigned int {
             // Per frame, never cached: the frontend is entitled to hand over a

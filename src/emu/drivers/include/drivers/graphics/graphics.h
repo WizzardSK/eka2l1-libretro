@@ -168,6 +168,21 @@ namespace eka2l1::drivers {
             disp_hook_ = hook;
         }
 
+        /**
+         * \brief Process one queued command list, waiting up to the given time
+         *        for one to arrive.
+         *
+         * For a host that owns the thread the graphics context is current on
+         * (a libretro frontend) and so cannot hand it to run(): it calls this
+         * from that thread instead.
+         *
+         * \param timeout_us    How long to wait for a command list, in microseconds.
+         * \returns False when no list came in time, or the driver was aborted.
+         */
+        virtual bool run_once(const int timeout_us) {
+            return false;
+        }
+
         virtual void update_bitmap(drivers::handle h, const std::size_t size, const eka2l1::vec2 &offset,
             const eka2l1::vec2 &dim, const void *data, const std::size_t pixels_per_line = 0)
             = 0;

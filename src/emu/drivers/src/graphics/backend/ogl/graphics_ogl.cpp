@@ -27,6 +27,9 @@
 
 #include <drivers/graphics/backend/ogl/common_ogl.h>
 #include <drivers/graphics/backend/ogl/graphics_ogl.h>
+#ifdef EKA2L1_LIBRETRO
+#include <drivers/graphics/backend/context_libretro.h>
+#endif
 #include <drivers/graphics/backend/ogl/buffer_ogl.h>
 #include <drivers/graphics/backend/ogl/fb_ogl.h>
 #include <common/platform.h>
@@ -55,12 +58,25 @@ namespace eka2l1::drivers {
     void init_gl_graphics_library(graphics::gl_context::mode api) {
         switch (api) {
             case graphics::gl_context::mode::opengl: {
+#ifdef EKA2L1_LIBRETRO
+                // The functions of the frontend's context, from the frontend
+                if (!gladLoadGLLoader(graphics::gl_context_libretro::get_proc_address)) {
+                    LOG_CRITICAL(DRIVER_GRAPHICS, "gladLoadGLLoader() failed");
+                    return;
+                }
+#else
                 gladLoadGL();
+#endif
                 break;
             }
 
             case graphics::gl_context::mode::opengl_es: {
-#if EKA2L1_PLATFORM(ANDROID)
+#ifdef EKA2L1_LIBRETRO
+                if (!gladLoadGLES2Loader(graphics::gl_context_libretro::get_proc_address)) {
+                    LOG_CRITICAL(DRIVER_GRAPHICS, "gladLoadGLES2Loader() failed");
+                    return;
+                }
+#elif EKA2L1_PLATFORM(ANDROID)
                 if (!gladLoadGLES2Loader((GLADloadproc) eglGetProcAddress)) {
                     LOG_CRITICAL(DRIVER_GRAPHICS, "gladLoadGLES2Loader() failed");
                     return;
@@ -1965,6 +1981,24 @@ namespace eka2l1::drivers {
 
             delete[] list->base_;
         }
+    }
+
+    bool ogl_graphics_driver::run_once(const int timeout_us) {
+        if (should_stop) {
+            return false;
+        }
+
+        std::optional<command_list> list = list_queue.pop(timeout_us);
+        if (!list) {
+            return false;
+        }
+
+        for (std::size_t i = 0; i < list->size_; i++) {
+            dispatch(list->base_[i]);
+        }
+
+        delete[] list->base_;
+        return true;
     }
 
     void ogl_graphics_driver::abort() {

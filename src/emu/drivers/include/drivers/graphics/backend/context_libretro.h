@@ -13,8 +13,9 @@ namespace eka2l1::drivers::graphics {
     //
     // Everything a normal backend does at startup - choose a config, create a
     // context, bind it to a surface, present it - the frontend has done, and it
-    // makes the context current before it calls into the core. So this class
-    // creates nothing and presents nothing.
+    // makes the context current on its own thread before it calls into the
+    // core. So this class creates nothing and presents nothing, and the GL
+    // backend runs on that thread (see the libretro frontend's run_frame).
     //
     // The one thing it has to answer is where "the screen" is. A frontend does
     // not render to FBO 0; it hands the core a framebuffer object per frame,
@@ -44,7 +45,15 @@ namespace eka2l1::drivers::graphics {
         // allowed to hand over a different framebuffer each time.
         static void set_framebuffer_getter(std::function<unsigned int()> getter);
 
+        // The frontend's get_proc_address, which the GL backend loads the
+        // context's functions through; set by the libretro frontend before the
+        // graphics driver is created.
+        using proc_address_getter = void (*(*)(const char *))(void);
+        static void set_proc_address_getter(proc_address_getter getter);
+        static void *get_proc_address(const char *name);
+
     private:
         static std::function<unsigned int()> s_framebuffer_getter;
+        static proc_address_getter s_proc_address_getter;
     };
 }
