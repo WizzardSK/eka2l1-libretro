@@ -87,7 +87,9 @@ libretro-build-windows-x64:
   extends:
     - .libretro-windows-cmake-x86_64
     - .core-defs
-  image: mstorsjo/llvm-mingw:latest
+  # LLVM 18: later libc++ no longer pulls in the headers the vendored fmt
+  # and Boost (and some of EKA2L1) rely on getting transitively
+  image: mstorsjo/llvm-mingw:20240619
   variables:
     # The script fetches the submodules itself
     GIT_SUBMODULE_STRATEGY: none

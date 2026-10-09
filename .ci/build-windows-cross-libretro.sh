@@ -70,11 +70,34 @@ find src -name CMakeLists.txt -not -path "./deps-$TRIPLE/*" -exec cat {} + |
     done
 ls "$CASE_LIB"
 
+# zlib for FFmpeg (it is configured with --enable-zlib, and mingw-w64 has no
+# zlib of its own), from the submodule the emulator builds its own copy from
+if [ ! -f "$DEPS/lib/libz.a" ]; then
+    mkdir -p "$DEPS/include" "$DEPS/lib" "$DEPS/zlib-obj"
+    for f in adler32 compress crc32 deflate gzclose gzlib gzread gzwrite infback \
+             inffast inflate inftrees trees uncompr zutil; do
+        $TRIPLE-clang -O2 -c src/external/zlib/$f.c -o "$DEPS/zlib-obj/$f.o"
+    done
+    llvm-ar rcs "$DEPS/lib/libz.a" "$DEPS"/zlib-obj/*.o
+    cp src/external/zlib/zlib.h src/external/zlib/zconf.h "$DEPS/include/"
+fi
+
+# std::unary_function, which the vendored Boost still uses, is gone from
+# libc++ in C++17 and later unless asked for
+LIBCXX_COMPAT="-D_LIBCPP_ENABLE_CXX17_REMOVED_UNARY_BINARY_FUNCTION"
+
 cmake -S . -B "$BUILD_DIR" -G Ninja \
     -DCMAKE_TOOLCHAIN_FILE="$DEPS/toolchain.cmake" \
     -DCMAKE_BUILD_TYPE=Release \
     -DCI=ON -DEKA2L1_BUILD_LIBRETRO=ON -DEKA2L1_SCRIPTING_LUA=OFF \
-    -DCMAKE_C_FLAGS="-idirafter $CASE_INC" \
-    -DCMAKE_CXX_FLAGS="-idirafter $CASE_INC" \
-    -DCMAKE_SHARED_LINKER_FLAGS="-static -L$CASE_LIB"
-cmake --build "$BUILD_DIR" --target eka2l1_libretro -j "$JOBS" -- ${KEEP_GOING:+-k 0}
+    -DCMAKE_C_FLAGS="-I$DEPS/include -idirafter $CASE_INC" \
+    -DCMAKE_CXX_FLAGS="$LIBCXX_COMPAT -idirafter $CASE_INC" \
+    -DCMAKE_EXE_LINKER_FLAGS="-L$DEPS/lib" \
+    -DCMAKE_SHARED_LINKER_FLAGS="-static -L$CASE_LIB -L$DEPS/lib"
+if ! cmake --build "$BUILD_DIR" --target eka2l1_libretro -j "$JOBS" -- ${KEEP_GOING:+-k 0}; then
+    # FFmpeg's configure log says why it gave up, the build's own output does not
+    for log in "$BUILD_DIR"/../ffmpeg-cache/*/build.log build/ffmpeg-cache/*/build.log; do
+        [ -f "$log" ] && tail -n 60 "$log"
+    done
+    exit 1
+fi

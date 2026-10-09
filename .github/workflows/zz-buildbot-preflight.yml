@@ -116,6 +116,6 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build the way the recipe does
         run: |
-          docker run --rm -v "$PWD":/src -w /src -e NUMPROC=$(nproc) -e KEEP_GOING=1 mstorsjo/llvm-mingw:latest \
+          docker run --rm -v "$PWD":/src -w /src -e NUMPROC=$(nproc) -e KEEP_GOING=1 mstorsjo/llvm-mingw:20240619 \
             sh -c 'BUILD_DIR=build/windows-x86_64 .ci/build-windows-cross-libretro.sh'
           ls -la build/windows-x86_64/bin/eka2l1_libretro.dll
