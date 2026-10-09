@@ -70,6 +70,16 @@ find src -name CMakeLists.txt -not -path "./deps-$TRIPLE/*" -exec cat {} + |
     done
 ls "$CASE_LIB"
 
+# src/external/ffmpeg configures a non-MSVC Windows build as if it ran on
+# Windows - no --enable-cross-compile - and FFmpeg's configure then tries to
+# run its test .exe and stops ("Exec format error"). Add it for a cross build,
+# as the Android and Apple branches there have it.
+FFMPEG_CMAKE=src/external/ffmpeg/CMakeLists.txt
+if ! grep -q 'mingw32 --enable-cross-compile' "$FFMPEG_CMAKE"; then
+    grep -q 'list(APPEND ffmpeg_options --target-os=mingw32)' "$FFMPEG_CMAKE"
+    sed -i 's|list(APPEND ffmpeg_options --target-os=mingw32)|list(APPEND ffmpeg_options --target-os=mingw32 --enable-cross-compile "--nm=${CMAKE_NM}")|' "$FFMPEG_CMAKE"
+fi
+
 # zlib for FFmpeg (it is configured with --enable-zlib, and mingw-w64 has no
 # zlib of its own), from the submodule the emulator builds its own copy from
 if [ ! -f "$DEPS/lib/libz.a" ]; then
