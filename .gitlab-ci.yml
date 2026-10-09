@@ -8,8 +8,10 @@
 # xenial-gcc9 and focal images, so the Linux jobs run on ubuntu:22.04 and pull
 # their own toolchain, the way other C++20 cores do. Android builds with the
 # NDK the template provides (arm64 only, as upstream's app: dynarmic's x86_64
-# backend does not build with the NDK's libc++). Windows is not here: the
-# buildbot's MSVC 2019 (19.28) is too old for the C++20 the emulator uses.
+# backend does not build with the NDK's libc++). Windows is cross-built on
+# Linux with llvm-mingw (.ci/build-windows-cross-libretro.sh), as
+# rpcs3-libretro is: the buildbot's MSVC 2019 (19.28) is too old for the
+# C++20 the emulator uses.
 
 # Core definitions
 .core-defs:
@@ -39,6 +41,10 @@ include:
   # Linux
   - project: 'libretro-infrastructure/ci-templates'
     file: '/linux-cmake.yml'
+
+  # Windows
+  - project: 'libretro-infrastructure/ci-templates'
+    file: '/windows-cmake-mingw.yml'
 
   # macOS
   - project: 'libretro-infrastructure/ci-templates'
@@ -75,6 +81,21 @@ libretro-build-linux-aarch64:
     - .libretro-linux-cmake-aarch64
     - .core-deps
     - .core-defs
+
+# Windows 64-bit, cross-built with llvm-mingw
+libretro-build-windows-x64:
+  extends:
+    - .libretro-windows-cmake-x86_64
+    - .core-defs
+  image: mstorsjo/llvm-mingw:latest
+  variables:
+    # The script fetches the submodules itself
+    GIT_SUBMODULE_STRATEGY: none
+  before_script:
+    - export NUMPROC=$(($(nproc)/5))
+  script:
+    - BUILD_DIR=$BUILD_DIR .ci/build-windows-cross-libretro.sh
+    - mv $BUILD_DIR/bin/$LIBNAME $LIBNAME
 
 # macOS: Apple clang and the system's make (no Ninja on those runners), and
 # the deployment target the project's own CI uses (std::filesystem and the

@@ -106,3 +106,16 @@ jobs:
             . -Bbuild/osx ${{ matrix.extra }}
           cmake --build build/osx --target eka2l1_libretro --config Release -- -j $(sysctl -n hw.ncpu)
           otool -L build/osx/bin/eka2l1_libretro.dylib
+
+  # Windows, cross-built in the same llvm-mingw image as the recipe
+  windows:
+    name: windows-x64
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the way the recipe does
+        run: |
+          docker run --rm -v "$PWD":/src -w /src -e NUMPROC=$(nproc) -e KEEP_GOING=1 mstorsjo/llvm-mingw:latest \
+            sh -c 'BUILD_DIR=build/windows-x86_64 .ci/build-windows-cross-libretro.sh'
+          ls -la build/windows-x86_64/bin/eka2l1_libretro.dll
