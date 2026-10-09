@@ -97,7 +97,7 @@ libretro-build-windows-x64:
     - export NUMPROC=$(($(nproc)/5))
   script:
     - BUILD_DIR=$BUILD_DIR .ci/build-windows-cross-libretro.sh
-    - mv $BUILD_DIR/bin/$LIBNAME $LIBNAME
+    - mv $BUILD_DIR/src/emu/libretro/$LIBNAME $LIBNAME
 
 # macOS: Apple clang and the system's make (no Ninja on those runners), and
 # the deployment target the project's own CI uses (std::filesystem and the
