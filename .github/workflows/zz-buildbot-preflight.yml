@@ -58,3 +58,51 @@ jobs:
           file eka2l1_libretro.so
           nm -D --defined-only eka2l1_libretro.so | grep -c " T retro_"
           readelf -d eka2l1_libretro.so | grep NEEDED
+
+  # Android, as the android-cmake template builds it (NDK, API 28, arm64)
+  android:
+    name: android-arm64-v8a
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Build the way the recipe does
+        run: |
+          sudo apt-get -y install ninja-build
+          NDK_ROOT=$ANDROID_NDK_LATEST_HOME
+          cmake -DCMAKE_BUILD_TYPE=Release -G Ninja -DCI=ON -DEKA2L1_BUILD_LIBRETRO=ON -DEKA2L1_SCRIPTING_LUA=OFF \
+            -DANDROID_PLATFORM=android-28 -DCMAKE_TOOLCHAIN_FILE=$NDK_ROOT/build/cmake/android.toolchain.cmake \
+            -DANDROID_STL=c++_static -DANDROID_ABI=arm64-v8a . -Bbuild/android-arm64-v8a
+          cmake --build build/android-arm64-v8a --target eka2l1_libretro --config Release -- -j $(nproc)
+          ls -la build/android-arm64-v8a/bin/eka2l1_libretro_android.so
+
+  # macOS, as the osx-cmake templates build it: Apple clang, make, no Ninja
+  # and no nasm installed
+  macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: osx-arm64
+            runner: macos-15
+            extra: -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_APPLE_SILICON_PROCESSOR=arm64 -DCMAKE_SYSTEM_PROCESSOR=arm64
+          - name: osx-x64
+            runner: macos-15-intel
+            extra: ""
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 240
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "12.0"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Build the way the recipe does
+        run: |
+          cmake -DCMAKE_BUILD_TYPE=Release -DCI=ON -DEKA2L1_BUILD_LIBRETRO=ON -DEKA2L1_SCRIPTING_LUA=OFF \
+            . -Bbuild/osx ${{ matrix.extra }}
+          cmake --build build/osx --target eka2l1_libretro --config Release -- -j $(sysctl -n hw.ncpu)
+          otool -L build/osx/bin/eka2l1_libretro.dylib

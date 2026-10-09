@@ -3,12 +3,13 @@
 # This recipe is consumed by the Libretro buildbot so the EKA2L1 core can be
 # distributed through RetroArch's Online Updater > Core Downloader.
 #
-# Only the two Linux targets are here for now. The core is C++20 (see the top
-# of CMakeLists.txt), which rules out the buildbot's own xenial-gcc9 and focal
-# images and its MSVC 19.28 runner, so both jobs run on ubuntu:22.04 and pull
-# their own toolchain, the way other C++20 cores do. Windows (MXE) and the
-# Apple targets need the deps EKA2L1 vendors per-platform and are left for
-# later; Android has a full Gradle app upstream and would want its own recipe.
+# Linux x64/aarch64, Android arm64-v8a and macOS arm64/x86_64. The core is
+# C++20 (see the top of CMakeLists.txt), which rules out the buildbot's own
+# xenial-gcc9 and focal images, so the Linux jobs run on ubuntu:22.04 and pull
+# their own toolchain, the way other C++20 cores do. Android builds with the
+# NDK the template provides (arm64 only, as upstream's app: dynarmic's x86_64
+# backend does not build with the NDK's libc++). Windows is not here: the
+# buildbot's MSVC 2019 (19.28) is too old for the C++20 the emulator uses.
 
 # Core definitions
 .core-defs:
@@ -39,6 +40,17 @@ include:
   - project: 'libretro-infrastructure/ci-templates'
     file: '/linux-cmake.yml'
 
+  # macOS
+  - project: 'libretro-infrastructure/ci-templates'
+    file: '/osx-cmake-arm64.yml'
+  - project: 'libretro-infrastructure/ci-templates'
+    file: '/osx-cmake-x86.yml'
+
+  ################################## CELLULAR #################################
+  # Android
+  - project: 'libretro-infrastructure/ci-templates'
+    file: '/android-cmake.yml'
+
 # Stages for building
 stages:
   - build-prepare
@@ -63,3 +75,33 @@ libretro-build-linux-aarch64:
     - .libretro-linux-cmake-aarch64
     - .core-deps
     - .core-defs
+
+# macOS: Apple clang and the system's make (no Ninja on those runners), and
+# the deployment target the project's own CI uses (std::filesystem and the
+# C++20 library need 12.0, the templates default to 10.9/10.15)
+.core-defs-osx:
+  extends: .core-defs
+  variables:
+    CORE_ARGS: -DCI=ON -DEKA2L1_BUILD_LIBRETRO=ON -DEKA2L1_SCRIPTING_LUA=OFF
+    MACOSX_DEPLOYMENT_TARGET: "12.0"
+
+# macOS 64-bit (ARM)
+libretro-build-osx-arm64:
+  extends:
+    - .libretro-osx-cmake-arm64
+    - .core-defs-osx
+
+# macOS 64-bit (Intel)
+libretro-build-osx-x64:
+  extends:
+    - .libretro-osx-cmake-x86_64
+    - .core-defs-osx
+
+################################### CELLULAR #################################
+# Android 64-bit (ARM)
+android-arm64-v8a:
+  extends:
+    - .libretro-android-cmake-arm64-v8a
+    - .core-defs
+  variables:
+    API_LEVEL: 28
