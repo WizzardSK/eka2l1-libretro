@@ -507,8 +507,12 @@ namespace eka2l1::drivers {
 
     bool player_wmf::set_position_for_custom_format(const std::uint64_t pos_in_us) {
         // Time unit in 100 nanoseconds, convert to unit by mul with 10.
-        PROPVARIANT time_to_seek = { pos_in_us * 10 };
+        // The braces used to put the time into vt, PROPVARIANT's first member,
+        // which the next line then overwrote: every seek went to 0
+        PROPVARIANT time_to_seek;
+        PropVariantInit(&time_to_seek);
         time_to_seek.vt = VT_I8;
+        time_to_seek.hVal.QuadPart = static_cast<LONGLONG>(pos_in_us * 10);
 
         HRESULT res = reader_->SetCurrentPosition(GUID_NULL, time_to_seek);
         if (res == S_OK) {
