@@ -5,6 +5,7 @@
 // CONTENT_MODEL.md next to this file for why that is three steps rather than
 // one, and which parts of it are still open questions.
 
+#include <libretro.h>
 #include <libretro_state.h>
 
 #include <common/algorithm.h>
@@ -19,11 +20,18 @@
 #include <utils/apacmd.h>
 
 #include <algorithm>
+#include <cctype>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <set>
+#include <sstream>
+#include <vector>
 
 namespace fs = std::filesystem;
+
+// main.cpp: the frontend's VFS, if it has one
+extern const retro_vfs_interface *libretro_vfs;
 
 namespace eka2l1::libretro {
     namespace {
@@ -38,6 +46,83 @@ namespace eka2l1::libretro {
         bool is_package(const std::string &path) {
             const std::string ext = lowercase_extension(path);
             return (ext == ".sis") || (ext == ".sisx") || (ext == ".n-gage");
+        }
+
+        // Content the frontend hands over as a URI (saf://..., Android's Play
+        // Store RetroArch) cannot be opened by the OS; it is read through the
+        // frontend's VFS. A scheme, then "://".
+        bool is_uri(const std::string &path) {
+            if (path.empty() || !std::isalpha(static_cast<unsigned char>(path[0])))
+                return false;
+            for (std::size_t i = 1; i < path.size(); i++) {
+                const char c = path[i];
+                if (c == ':')
+                    return path.compare(i, 3, "://") == 0;
+                if (!std::isalnum(static_cast<unsigned char>(c)) && c != '+' && c != '-' && c != '.')
+                    return false;
+            }
+            return false;
+        }
+
+        std::uintmax_t content_size(const std::string &path) {
+            if (is_uri(path)) {
+                if (!libretro_vfs)
+                    return 0;
+                retro_vfs_file_handle *handle = libretro_vfs->open(path.c_str(), RETRO_VFS_FILE_ACCESS_READ, RETRO_VFS_FILE_ACCESS_HINT_NONE);
+                if (!handle)
+                    return 0;
+                const std::int64_t size = libretro_vfs->size(handle);
+                libretro_vfs->close(handle);
+                return size > 0 ? static_cast<std::uintmax_t>(size) : 0;
+            }
+            std::error_code ec;
+            const std::uintmax_t size = fs::file_size(path, ec);
+            return ec ? 0 : size;
+        }
+
+        // A URI's file copied to dest through the VFS, in chunks.
+        bool copy_from_vfs(const std::string &uri, const std::string &dest) {
+            if (!libretro_vfs) {
+                LOG_ERROR(FRONTEND_CMDLINE, "{} can only be read through the frontend's VFS, which it does not offer", uri);
+                return false;
+            }
+            retro_vfs_file_handle *handle = libretro_vfs->open(uri.c_str(), RETRO_VFS_FILE_ACCESS_READ, RETRO_VFS_FILE_ACCESS_HINT_NONE);
+            if (!handle) {
+                LOG_ERROR(FRONTEND_CMDLINE, "The frontend cannot open {}", uri);
+                return false;
+            }
+            std::ofstream out(dest, std::ios::binary | std::ios::trunc);
+            std::vector<char> buffer(1 << 20);
+            bool ok = out.is_open();
+            while (ok) {
+                const std::int64_t got = libretro_vfs->read(handle, buffer.data(), buffer.size());
+                if (got < 0) {
+                    ok = false;
+                    break;
+                }
+                if (got == 0)
+                    break;
+                out.write(buffer.data(), got);
+                ok = static_cast<bool>(out);
+            }
+            libretro_vfs->close(handle);
+            return ok;
+        }
+
+        bool read_from_vfs(const std::string &uri, std::string &text) {
+            if (!libretro_vfs)
+                return false;
+            retro_vfs_file_handle *handle = libretro_vfs->open(uri.c_str(), RETRO_VFS_FILE_ACCESS_READ, RETRO_VFS_FILE_ACCESS_HINT_NONE);
+            if (!handle)
+                return false;
+            const std::int64_t size = libretro_vfs->size(handle);
+            bool ok = size >= 0;
+            if (ok) {
+                text.resize(static_cast<std::size_t>(size));
+                ok = (size == 0) || (libretro_vfs->read(handle, text.data(), static_cast<std::uint64_t>(size)) == size);
+            }
+            libretro_vfs->close(handle);
+            return ok;
         }
     }
 
@@ -124,8 +209,7 @@ namespace eka2l1::libretro {
             return 0;
         }
 
-        std::error_code ec;
-        const std::uintmax_t size = fs::file_size(path, ec);
+        const std::uintmax_t size = content_size(path);
 
         std::string line;
         while (std::getline(index, line)) {
@@ -152,8 +236,7 @@ namespace eka2l1::libretro {
     }
 
     void emulator::remember_uid(const std::string &path, std::uint32_t uid) {
-        std::error_code ec;
-        const std::uintmax_t size = fs::file_size(path, ec);
+        const std::uintmax_t size = content_size(path);
 
         std::ofstream index(index_path(), std::ios::app);
         if (index.is_open()) {
@@ -216,7 +299,31 @@ namespace eka2l1::libretro {
 
         LOG_INFO(FRONTEND_CMDLINE, "Installing {}", path);
 
-        if (symsys->install_package(common::utf8_to_ucs2(path), install_drive) != 0) {
+        // The installer reads the package with the OS's file calls; one behind
+        // a URI is copied out through the frontend's VFS first, into the
+        // core's own folder, and the copy goes once it is installed - what was
+        // installed is in the emulated drives by then.
+        std::string source = path;
+        if (is_uri(path)) {
+            const std::string imports = eka2l1::add_path(data_root_, "libretro-import/");
+            eka2l1::common::create_directories(imports);
+            std::string name = eka2l1::filename(path);
+            if (name.empty())
+                name = "package" + lowercase_extension(path);
+            source = eka2l1::add_path(imports, name);
+            if (!copy_from_vfs(path, source)) {
+                std::error_code ec;
+                fs::remove(source, ec);
+                return false;
+            }
+        }
+
+        const bool installed = symsys->install_package(common::utf8_to_ucs2(source), install_drive) == 0;
+        if (source != path) {
+            std::error_code ec;
+            fs::remove(source, ec);
+        }
+        if (!installed) {
             LOG_ERROR(FRONTEND_CMDLINE, "Installation failed for {}", path);
             return false;
         }
@@ -250,11 +357,18 @@ namespace eka2l1::libretro {
         }
 
         // Otherwise a shortcut: a text file naming what is already installed.
-        std::ifstream shortcut(path);
-        if (!shortcut.is_open()) {
+        std::string text;
+        if (is_uri(path) ? !read_from_vfs(path, text) : ![&] {
+                std::ifstream file(path);
+                if (!file.is_open())
+                    return false;
+                text.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+                return true;
+            }()) {
             LOG_ERROR(FRONTEND_CMDLINE, "Cannot open {}", path);
             return false;
         }
+        std::istringstream shortcut(text);
 
         std::string line;
         while (std::getline(shortcut, line)) {

@@ -25,6 +25,9 @@
 
 #include <string>
 
+// The frontend's VFS, for content behind a URI (content.cpp)
+const retro_vfs_interface *libretro_vfs = nullptr;
+
 namespace {
     retro_environment_t env_cb = nullptr;
     retro_video_refresh_t video_cb = nullptr;
@@ -72,6 +75,12 @@ RETRO_API void retro_set_environment(retro_environment_t cb) {
     retro_log_callback log{};
     if (cb(RETRO_ENVIRONMENT_GET_LOG_INTERFACE, &log))
         log_cb = log.log;
+
+    // Content behind a URI (saf://, Android's Play Store RetroArch) is read
+    // through the frontend; v1 (open/read/size/close) is all content.cpp uses
+    retro_vfs_interface_info vfs{ 1, nullptr };
+    if (cb(RETRO_ENVIRONMENT_GET_VFS_INTERFACE, &vfs) && vfs.iface)
+        libretro_vfs = vfs.iface;
 }
 
 RETRO_API void retro_set_video_refresh(retro_video_refresh_t cb) { video_cb = cb; }
