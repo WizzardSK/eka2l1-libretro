@@ -80,6 +80,13 @@ if ! grep -q 'mingw32 --enable-cross-compile' "$FFMPEG_CMAKE"; then
     sed -i 's|list(APPEND ffmpeg_options --target-os=mingw32)|list(APPEND ffmpeg_options --target-os=mingw32 --enable-cross-compile "--nm=${CMAKE_NM}")|' "$FFMPEG_CMAKE"
 fi
 
+# The FFmpeg it builds no longer assembles with yasm ("option -g needs an
+# argument"), and the llvm-mingw image has yasm, not nasm: look for nasm
+# only, and without it FFmpeg is configured with --disable-x86asm
+if grep -q 'find_program(ffmpeg_assembler NAMES nasm yasm)' "$FFMPEG_CMAKE"; then
+    sed -i 's|find_program(ffmpeg_assembler NAMES nasm yasm)|find_program(ffmpeg_assembler NAMES nasm)|' "$FFMPEG_CMAKE"
+fi
+
 # zlib for FFmpeg (it is configured with --enable-zlib, and mingw-w64 has no
 # zlib of its own), from the submodule the emulator builds its own copy from
 if [ ! -f "$DEPS/lib/libz.a" ]; then
