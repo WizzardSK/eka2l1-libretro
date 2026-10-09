@@ -106,8 +106,10 @@ cmake -S . -B "$BUILD_DIR" -G Ninja \
     -DCMAKE_SHARED_LINKER_FLAGS="-static -L$CASE_LIB -L$DEPS/lib"
 if ! cmake --build "$BUILD_DIR" --target eka2l1_libretro -j "$JOBS" -- ${KEEP_GOING:+-k 0}; then
     # FFmpeg's configure log says why it gave up, the build's own output does not
-    for log in build/ffmpeg-cache/*/build.log build/ffmpeg-cache/*/build/ffbuild/config.log; do
-        [ -f "$log" ] && tail -n 80 "$log"
+    for log in build/ffmpeg-cache/*/build.log; do
+        [ -f "$log" ] || continue
+        grep -n -B3 -A8 -E 'error|Error [0-9]' "$log" | head -n 150
+        tail -n 20 "$log"
     done
     exit 1
 fi
