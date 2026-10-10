@@ -18,6 +18,12 @@
 #include <cstring>
 
 #include <common/configure.h>
+#include <common/log.h>
+
+#include <spdlog/sinks/base_sink.h>
+
+#include <memory>
+#include <mutex>
 
 #include <libretro.h>
 #include <libretro_state.h>
@@ -52,6 +58,49 @@ namespace {
     // Everything the emulator keeps - configuration, the devices installed from
     // firmware dumps, the virtual drives - under the directory the frontend
     // hands out for exactly that.
+    // The emulator's own log (LOG_INFO, LOG_ERROR...) goes nowhere until a
+    // logger is set up, and standalone's writes EKA2L1.log next to the
+    // executable - so a core's messages, why a package did not install among
+    // them, went unseen. They go to RetroArch's log instead.
+    class frontend_log_sink final : public spdlog::sinks::base_sink<std::mutex> {
+    protected:
+        void sink_it_(const spdlog::details::log_msg &msg) override {
+            if (!log_cb)
+                return;
+            retro_log_level level = RETRO_LOG_DEBUG;
+            switch (msg.level) {
+            case spdlog::level::info:
+                level = RETRO_LOG_INFO;
+                break;
+            case spdlog::level::warn:
+                level = RETRO_LOG_WARN;
+                break;
+            case spdlog::level::err:
+            case spdlog::level::critical:
+                level = RETRO_LOG_ERROR;
+                break;
+            default:
+                break;
+            }
+            log_cb(level, "%.*s\n", static_cast<int>(msg.payload.size()), msg.payload.data());
+        }
+
+        void flush_() override {}
+    };
+
+    void setup_frontend_log() {
+        if (eka2l1::log::spd_logger)
+            return;
+        eka2l1::log::spd_logger = std::make_shared<spdlog::logger>("EKA2L1", std::make_shared<frontend_log_sink>());
+        eka2l1::log::spd_logger->set_level(spdlog::level::trace);
+        // Warnings and errors from everywhere; the frontend glue's own
+        // messages (installing, launching) from info, as they say what
+        // happened to the content
+        eka2l1::log::filterings = std::make_unique<eka2l1::log_filterings>();
+        eka2l1::log::filterings->reset_all(spdlog::level::warn);
+        eka2l1::log::filterings->set_minimum_level(eka2l1::FRONTEND_CMDLINE, spdlog::level::info);
+    }
+
     std::string data_root() {
         const char *system_dir = nullptr;
         if (env_cb && env_cb(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &system_dir) && system_dir)
@@ -90,6 +139,8 @@ RETRO_API void retro_set_input_poll(retro_input_poll_t cb) { input_poll_cb = cb;
 RETRO_API void retro_set_input_state(retro_input_state_t cb) { input_state_cb = cb; }
 
 RETRO_API void retro_init(void) {
+    setup_frontend_log();
+
     if (log_cb)
         log_cb(RETRO_LOG_INFO, "EKA2L1 " CURRENT_EKA2L1_VERSION_STRING " libretro core\n");
 
