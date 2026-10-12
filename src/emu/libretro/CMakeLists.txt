@@ -59,6 +59,7 @@ add_library(eka2l1_libretro SHARED
     "${EKA2L1_EMBEDDED_DATA}"
     src/audio.cpp
     src/main.cpp
+    src/screen.cpp
     src/content.cpp
     src/hooks.cpp
     src/state.cpp

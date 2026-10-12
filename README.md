@@ -15,6 +15,26 @@ The core needs a device made from a firmware dump of a Symbian phone or an N-Gag
 - Put the firmware (an RPKG, or a ROM with its ROFS images) into RetroArch's system directory, under `system/eka2l1/firmware/`. The core installs it the first time it starts.
 - Nothing else has to be copied: the emulator's own data files (its shaders, MIDI sound banks and patch libraries) are inside the core, which writes them to `system/eka2l1/resources/` and `system/eka2l1/patch/` when it starts.
 
+When more than one device is installed, the core option "Device" chooses which one to run on; it is read when the core starts.
+
+## Controls
+
+| RetroPad | Phone |
+| --- | --- |
+| D-pad | Up, down, left, right |
+| A | OK (the middle key) |
+| B | 5 |
+| Y | 7 |
+| X | 0 |
+| L / R | Left / right soft key |
+| L2 / R2 | * / # |
+| L3 | Menu key |
+| R3 | End key (red) |
+| Start | Call key (green) |
+| Select | Clear key (C) |
+
+The number keys are also on the keyboard (the number row and the keypad, with keypad `*` and `/` for `*` and `#`). The frontend's pointer - the mouse, or a touch screen - is the phone's touch screen.
+
 ## Content
 
 - `.n-gage`, `.sis`, `.sisx`: the core installs the package onto the device and launches it.

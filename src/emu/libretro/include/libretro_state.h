@@ -8,6 +8,7 @@
 #include <drivers/graphics/backend/emu_window_libretro.h>
 #include <drivers/graphics/graphics.h>
 #include <libretro_audio.h>
+#include <system/devices.h>
 #include <system/epoc.h>
 
 #include <atomic>
@@ -17,6 +18,15 @@
 #include <functional>
 #include <string>
 #include <thread>
+#include <vector>
+
+namespace eka2l1 {
+    class window_server;
+
+    namespace epoc {
+        struct screen;
+    }
+}
 
 namespace eka2l1::libretro {
     // The emulator, as a core sees it.
@@ -35,6 +45,11 @@ namespace eka2l1::libretro {
         // the virtual drives - lives under one directory the frontend gives
         // us. Nothing is written beside the core or the content.
         bool bring_up(const std::string &data_root);
+
+        // Which of the installed devices to run on: asked once, in bring_up,
+        // with the devices there are. The frontend glue answers from a core
+        // option; with nothing set it is the first one.
+        std::function<std::size_t(const std::vector<device> &)> choose_device;
 
         // How many devices are installed. A Symbian title runs on a device
         // built from a firmware dump, so zero means there is nothing to run,
@@ -74,6 +89,23 @@ namespace eka2l1::libretro {
 
         drivers::emu_window_libretro *window() { return window_.get(); }
 
+        // The size of the frame the emulator last drew: the phone's screen in
+        // its current mode, which a title may change (portrait to landscape).
+        // False until something was drawn.
+        bool frame_size(unsigned &width, unsigned &height) const;
+
+        // The largest frame the core draws, and so what the frontend is asked
+        // to make room for.
+        static constexpr unsigned MAX_FRAME_SIZE = 1280;
+
+        // A key of the phone, by its Symbian scan code (epoc::std_scan_code),
+        // going down or up.
+        void key(const std::uint32_t scan_code, const bool pressed);
+
+        // The touch screen, in pixels of the frame. `action` is a
+        // drivers::mouse_action: press, repeat (moved while down) or release.
+        void touch(const int x, const int y, const int action);
+
         // One frame of audio for the frontend: `frames` stereo frames at
         // audio_driver_libretro::OUTPUT_RATE. Silence until the emulator's
         // audio driver is there.
@@ -106,6 +138,22 @@ namespace eka2l1::libretro {
         bool brought_up_ = false;
 
         void os_thread_main();
+
+        // The phone's screen, drawn into the frontend's framebuffer whenever
+        // the window server has redrawn it. On the OS thread.
+        void register_screen_callbacks();
+        void draw_screen(epoc::screen *scr);
+
+        // Set on the OS thread once the system is up, read by the frontend's
+        // for input
+        std::atomic<window_server *> winserv_{ nullptr };
+
+        // -100 while a frame is with the graphics driver, as the driver's
+        // wait_for expects
+        int present_status_ = 0;
+
+        std::atomic<unsigned> frame_width_{ 0 };
+        std::atomic<unsigned> frame_height_{ 0 };
 
         std::unique_ptr<drivers::emu_window_libretro> window_;
         std::unique_ptr<drivers::graphics_driver> graphics_driver_;

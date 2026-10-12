@@ -4,6 +4,9 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- The phone's screen is shown: the core draws it into the frontend's framebuffer whenever the emulator has redrawn it, at the screen's own size, and tells the frontend that size when it changes (another device, or a title that turns the screen round). Until now nothing was drawn at all, so every title was a black screen.
+- Controls: the phone's keys are on the RetroPad (d-pad, OK, the two soft keys, 5, 7, 0, *, #, the green and red keys, Clear and Menu), the number keys are on the keyboard as well, and the frontend's pointer (mouse or touch) is the phone's touch screen. There was no input.
+- Core option "Device": which of the installed devices to run on. The core always used the first one.
 - Sound: the core has an audio driver, which mixes the emulator's output streams for the frontend, each brought from its own rate and channel count to 44100 Hz stereo, one frame's worth per call. There was no sound at all.
 - The system is brought up as the standalone does before content starts: the ROM drive is mounted, the patch libraries and the emulator's own functions are loaded, the after-boot services and the boot are started, and the package registries are read. Without it a game died in its main thread (gouchi, SSX 3).
 - The shaders, the MIDI sound banks and the patch libraries are carried in the core and written under `system/eka2l1/` at start, so nothing has to be copied beside the firmware.

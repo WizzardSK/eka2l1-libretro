@@ -1,16 +1,7 @@
 /*
- * The libretro entry points.
- *
- * This is the skeleton: it answers the frontend's questions and links against
- * the emulator, but does not run anything yet. Its job for now is to prove the
- * shape - that the emulator's libraries can live inside a shared object the
- * frontend dlopen()s, which is a different thing from linking an executable.
- *
- * What is deliberately absent: the emulation threads (EKA2L1 runs its own OS
- * and graphics threads and has no "run one frame" call, so retro_run will have
- * to hand-shake with them), the window and GL context, and the device/app
- * bootstrap, which is a design question rather than a coding one - a title is
- * installed into a virtual device and launched by UID, not loaded from a path.
+ * The libretro entry points: what the frontend asks and is told, the core
+ * option, and the frontend's input turned into the phone's keys and touch
+ * screen. The emulator itself is in the files beside this one.
  */
 
 #include <cstdint>
@@ -28,6 +19,8 @@
 #include <libretro.h>
 #include <libretro_state.h>
 #include <drivers/graphics/backend/context_libretro.h>
+#include <drivers/input/common.h>
+#include <services/window/keys.h>
 
 #include <string>
 
@@ -43,11 +36,14 @@ namespace {
     retro_input_state_t input_state_cb = nullptr;
     retro_log_printf_t log_cb = nullptr;
 
-    // The N-Gage screen. Symbian devices vary and the real geometry has to come
-    // from the emulated device once one is loaded; this is what the frontend is
-    // told until then.
+    // The N-Gage screen. Symbian devices vary, and a title may turn the screen
+    // round; this is what the frontend is told until the emulator has drawn a
+    // frame, whose size it is told then.
     constexpr unsigned DEFAULT_WIDTH = 176;
     constexpr unsigned DEFAULT_HEIGHT = 208;
+
+    unsigned frame_width = DEFAULT_WIDTH;
+    unsigned frame_height = DEFAULT_HEIGHT;
 
     // The audio the core hands over each run: the driver's rate over the 60
     // runs a second the core declares
@@ -105,6 +101,176 @@ namespace {
         eka2l1::log::filterings->set_minimum_level(eka2l1::FRONTEND_CMDLINE, spdlog::level::info);
     }
 
+    // The device to run on, of those installed. They are only known once the
+    // emulator has read its device list, so the option is published from
+    // there (retro_init) and names them as the standalone's list does.
+    constexpr const char *DEVICE_OPTION = "eka2l1_device";
+
+    std::string device_name(const eka2l1::device &dvc) {
+        std::string name = dvc.model + " (" + dvc.firmware_code + ")";
+        for (char &c : name) {
+            // The two characters an option's value list is cut at
+            if ((c == '|') || (c == ';'))
+                c = ' ';
+        }
+        return name;
+    }
+
+    std::size_t choose_device(const std::vector<eka2l1::device> &devices) {
+        if (!env_cb || devices.empty())
+            return 0;
+
+        // Kept: the frontend holds on to the pointers
+        static std::string description;
+        description = "Device (Restart Required); ";
+        for (std::size_t i = 0; i < devices.size(); i++) {
+            if (i != 0)
+                description += '|';
+            description += device_name(devices[i]);
+        }
+
+        static retro_variable variables[2];
+        variables[0] = { DEVICE_OPTION, description.c_str() };
+        variables[1] = { nullptr, nullptr };
+        env_cb(RETRO_ENVIRONMENT_SET_VARIABLES, variables);
+
+        retro_variable var{ DEVICE_OPTION, nullptr };
+        if (env_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
+            for (std::size_t i = 0; i < devices.size(); i++) {
+                if (device_name(devices[i]) == var.value)
+                    return i;
+            }
+        }
+
+        return 0;
+    }
+
+    // The phone's keys on a RetroPad, and its number keys on the keyboard as
+    // well. A key is down while anything bound to it is.
+    struct key_binding {
+        std::uint32_t scan_code;
+        unsigned device;
+        unsigned id;
+    };
+
+    const key_binding KEY_BINDINGS[] = {
+        { eka2l1::epoc::std_key_up_arrow, RETRO_DEVICE_JOYPAD, RETRO_DEVICE_ID_JOYPAD_UP },
+        { eka2l1::epoc::std_key_down_arrow, RETRO_DEVICE_JOYPAD, RETRO_DEVICE_ID_JOYPAD_DOWN },
+        { eka2l1::epoc::std_key_left_arrow, RETRO_DEVICE_JOYPAD, RETRO_DEVICE_ID_JOYPAD_LEFT },
+        { eka2l1::epoc::std_key_right_arrow, RETRO_DEVICE_JOYPAD, RETRO_DEVICE_ID_JOYPAD_RIGHT },
+        { eka2l1::epoc::std_key_device_3, RETRO_DEVICE_JOYPAD, RETRO_DEVICE_ID_JOYPAD_A },
+        { '5', RETRO_DEVICE_JOYPAD, RETRO_DEVICE_ID_JOYPAD_B },
+        { '7', RETRO_DEVICE_JOYPAD, RETRO_DEVICE_ID_JOYPAD_Y },
+        { '0', RETRO_DEVICE_JOYPAD, RETRO_DEVICE_ID_JOYPAD_X },
+        { eka2l1::epoc::std_key_device_0, RETRO_DEVICE_JOYPAD, RETRO_DEVICE_ID_JOYPAD_L },
+        { eka2l1::epoc::std_key_device_1, RETRO_DEVICE_JOYPAD, RETRO_DEVICE_ID_JOYPAD_R },
+        { eka2l1::epoc::std_key_nkp_asterisk, RETRO_DEVICE_JOYPAD, RETRO_DEVICE_ID_JOYPAD_L2 },
+        { eka2l1::epoc::std_key_hash, RETRO_DEVICE_JOYPAD, RETRO_DEVICE_ID_JOYPAD_R2 },
+        { eka2l1::epoc::std_key_application_0, RETRO_DEVICE_JOYPAD, RETRO_DEVICE_ID_JOYPAD_L3 },
+        { eka2l1::epoc::std_key_no, RETRO_DEVICE_JOYPAD, RETRO_DEVICE_ID_JOYPAD_R3 },
+        { eka2l1::epoc::std_key_yes, RETRO_DEVICE_JOYPAD, RETRO_DEVICE_ID_JOYPAD_START },
+        { eka2l1::epoc::std_key_backspace, RETRO_DEVICE_JOYPAD, RETRO_DEVICE_ID_JOYPAD_SELECT },
+        { '0', RETRO_DEVICE_KEYBOARD, RETROK_0 },
+        { '1', RETRO_DEVICE_KEYBOARD, RETROK_1 },
+        { '2', RETRO_DEVICE_KEYBOARD, RETROK_2 },
+        { '3', RETRO_DEVICE_KEYBOARD, RETROK_3 },
+        { '4', RETRO_DEVICE_KEYBOARD, RETROK_4 },
+        { '5', RETRO_DEVICE_KEYBOARD, RETROK_5 },
+        { '6', RETRO_DEVICE_KEYBOARD, RETROK_6 },
+        { '7', RETRO_DEVICE_KEYBOARD, RETROK_7 },
+        { '8', RETRO_DEVICE_KEYBOARD, RETROK_8 },
+        { '9', RETRO_DEVICE_KEYBOARD, RETROK_9 },
+        { '0', RETRO_DEVICE_KEYBOARD, RETROK_KP0 },
+        { '1', RETRO_DEVICE_KEYBOARD, RETROK_KP1 },
+        { '2', RETRO_DEVICE_KEYBOARD, RETROK_KP2 },
+        { '3', RETRO_DEVICE_KEYBOARD, RETROK_KP3 },
+        { '4', RETRO_DEVICE_KEYBOARD, RETROK_KP4 },
+        { '5', RETRO_DEVICE_KEYBOARD, RETROK_KP5 },
+        { '6', RETRO_DEVICE_KEYBOARD, RETROK_KP6 },
+        { '7', RETRO_DEVICE_KEYBOARD, RETROK_KP7 },
+        { '8', RETRO_DEVICE_KEYBOARD, RETROK_KP8 },
+        { '9', RETRO_DEVICE_KEYBOARD, RETROK_KP9 },
+        { eka2l1::epoc::std_key_nkp_asterisk, RETRO_DEVICE_KEYBOARD, RETROK_KP_MULTIPLY },
+        { eka2l1::epoc::std_key_hash, RETRO_DEVICE_KEYBOARD, RETROK_KP_DIVIDE }
+    };
+
+    // Scan codes are below this
+    constexpr std::size_t SCAN_CODES = 256;
+    bool key_down[SCAN_CODES] = {};
+
+    bool touch_down = false;
+    int touch_x = 0;
+    int touch_y = 0;
+
+    void release_input() {
+        std::memset(key_down, 0, sizeof(key_down));
+        touch_down = false;
+    }
+
+    void update_input() {
+        if (!input_state_cb)
+            return;
+
+        bool now_down[SCAN_CODES] = {};
+        for (const key_binding &binding : KEY_BINDINGS) {
+            if (input_state_cb(0, binding.device, 0, binding.id))
+                now_down[binding.scan_code] = true;
+        }
+
+        for (std::size_t code = 0; code < SCAN_CODES; code++) {
+            if (now_down[code] != key_down[code]) {
+                key_down[code] = now_down[code];
+                emu.key(static_cast<std::uint32_t>(code), now_down[code]);
+            }
+        }
+
+        // The touch screen: the frontend's pointer, which is its mouse and
+        // its touch screen both, over the picture
+        const bool pressed = input_state_cb(0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_PRESSED) != 0;
+        if (pressed) {
+            const int raw_x = input_state_cb(0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_X);
+            const int raw_y = input_state_cb(0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_Y);
+            const int x = (raw_x + 0x7fff) * static_cast<int>(frame_width) / 0xffff;
+            const int y = (raw_y + 0x7fff) * static_cast<int>(frame_height) / 0xffff;
+
+            if (!touch_down) {
+                emu.touch(x, y, eka2l1::drivers::mouse_action_press);
+            } else if ((x != touch_x) || (y != touch_y)) {
+                emu.touch(x, y, eka2l1::drivers::mouse_action_repeat);
+            }
+
+            touch_x = x;
+            touch_y = y;
+        } else if (touch_down) {
+            emu.touch(touch_x, touch_y, eka2l1::drivers::mouse_action_release);
+        }
+        touch_down = pressed;
+    }
+
+    void set_input_descriptors() {
+        static const retro_input_descriptor descriptors[] = {
+            { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP, "Up" },
+            { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN, "Down" },
+            { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT, "Left" },
+            { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT, "Right" },
+            { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A, "OK (Middle Key)" },
+            { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B, "5" },
+            { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Y, "7" },
+            { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_X, "0" },
+            { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L, "Left Soft Key" },
+            { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R, "Right Soft Key" },
+            { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L2, "*" },
+            { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R2, "#" },
+            { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L3, "Menu Key" },
+            { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R3, "End Key (Red)" },
+            { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_START, "Call Key (Green)" },
+            { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_SELECT, "Clear Key (C)" },
+            { 0, 0, 0, 0, nullptr }
+        };
+        if (env_cb)
+            env_cb(RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS, const_cast<retro_input_descriptor *>(descriptors));
+    }
+
     std::string data_root() {
         const char *system_dir = nullptr;
         if (env_cb && env_cb(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &system_dir) && system_dir)
@@ -149,6 +315,7 @@ RETRO_API void retro_init(void) {
         log_cb(RETRO_LOG_INFO, "EKA2L1 " CURRENT_EKA2L1_VERSION_STRING " libretro core\n");
 
     const std::string root = data_root();
+    emu.choose_device = choose_device;
     emu.bring_up(root);
 
     emu.install_device_if_needed(root + "/firmware");
@@ -185,11 +352,13 @@ RETRO_API void retro_get_system_info(struct retro_system_info *info) {
 
 RETRO_API void retro_get_system_av_info(struct retro_system_av_info *info) {
     std::memset(info, 0, sizeof(*info));
-    info->geometry.base_width = DEFAULT_WIDTH;
-    info->geometry.base_height = DEFAULT_HEIGHT;
-    info->geometry.max_width = DEFAULT_WIDTH;
-    info->geometry.max_height = DEFAULT_HEIGHT;
-    info->geometry.aspect_ratio = static_cast<float>(DEFAULT_WIDTH) / static_cast<float>(DEFAULT_HEIGHT);
+    info->geometry.base_width = frame_width;
+    info->geometry.base_height = frame_height;
+    // The frontend's framebuffer is made this large once; the phone's screen,
+    // whichever way up, is drawn into a corner of it
+    info->geometry.max_width = eka2l1::libretro::emulator::MAX_FRAME_SIZE;
+    info->geometry.max_height = eka2l1::libretro::emulator::MAX_FRAME_SIZE;
+    info->geometry.aspect_ratio = static_cast<float>(frame_width) / static_cast<float>(frame_height);
     info->timing.fps = 60.0;
     info->timing.sample_rate = static_cast<double>(eka2l1::libretro::audio_driver_libretro::OUTPUT_RATE);
 }
@@ -210,7 +379,7 @@ RETRO_API void retro_run(void) {
         // Nothing is running: hand the frontend a repeat so it has something
         // to pace on rather than a stall.
         if (video_cb)
-            video_cb(nullptr, DEFAULT_WIDTH, DEFAULT_HEIGHT, 0);
+            video_cb(nullptr, frame_width, frame_height, 0);
         if (audio_batch_cb) {
             std::memset(audio_frame, 0, sizeof(audio_frame));
             audio_batch_cb(audio_frame, AUDIO_FRAMES_PER_RUN);
@@ -222,10 +391,29 @@ RETRO_API void retro_run(void) {
     // thread the frontend's context is current on, until it presents a frame.
     // A title that draws nothing still returns - the frontend then repeats the
     // last frame, which is better than a frozen frontend.
+    update_input();
+
     const bool got_frame = emu.run_frame();
 
+    // The size of the screen as the emulator drew it: another device, or a
+    // title that turned the screen round
+    unsigned width = 0, height = 0;
+    if (got_frame && emu.frame_size(width, height) && ((width != frame_width) || (height != frame_height))) {
+        frame_width = width;
+        frame_height = height;
+
+        retro_game_geometry geometry{};
+        geometry.base_width = frame_width;
+        geometry.base_height = frame_height;
+        geometry.max_width = eka2l1::libretro::emulator::MAX_FRAME_SIZE;
+        geometry.max_height = eka2l1::libretro::emulator::MAX_FRAME_SIZE;
+        geometry.aspect_ratio = static_cast<float>(frame_width) / static_cast<float>(frame_height);
+        if (env_cb)
+            env_cb(RETRO_ENVIRONMENT_SET_GEOMETRY, &geometry);
+    }
+
     if (video_cb)
-        video_cb(got_frame ? RETRO_HW_FRAME_BUFFER_VALID : nullptr, DEFAULT_WIDTH, DEFAULT_HEIGHT, 0);
+        video_cb(got_frame ? RETRO_HW_FRAME_BUFFER_VALID : nullptr, frame_width, frame_height, 0);
 
     if (audio_batch_cb) {
         emu.mix_audio(audio_frame, AUDIO_FRAMES_PER_RUN);
@@ -266,6 +454,7 @@ namespace {
     void context_destroy() {
         emu.shut_down();
         emulator_started = false;
+        release_input();
     }
 }
 
@@ -298,6 +487,10 @@ RETRO_API bool retro_load_game(const struct retro_game_info *game) {
     }
 
     content_path = game->path;
+    frame_width = DEFAULT_WIDTH;
+    frame_height = DEFAULT_HEIGHT;
+    release_input();
+    set_input_descriptors();
     return true;
 }
 
@@ -306,6 +499,7 @@ RETRO_API bool retro_load_game_special(unsigned, const struct retro_game_info *,
 RETRO_API void retro_unload_game(void) {
     emu.shut_down();
     emulator_started = false;
+    release_input();
 }
 
 RETRO_API unsigned retro_get_region(void) { return RETRO_REGION_NTSC; }

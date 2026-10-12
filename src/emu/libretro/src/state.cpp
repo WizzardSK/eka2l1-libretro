@@ -126,6 +126,8 @@ namespace eka2l1::libretro {
         pkgmngr->load_registries();
         pkgmngr->migrate_legacy_registries();
 
+        register_screen_callbacks();
+
         brought_up_ = true;
     }
 
@@ -169,6 +171,10 @@ namespace eka2l1::libretro {
         }
 
         symsys->startup();
+
+        if (choose_device) {
+            conf.device = static_cast<int>(choose_device(dvcmngr->get_devices()));
+        }
 
         if (!symsys->set_device(conf.device)) {
             LOG_ERROR(FRONTEND_CMDLINE, "Device index {} is out of range; falling back to the first installed device", conf.device);

@@ -28,6 +28,9 @@ namespace eka2l1::libretro {
 
         should_quit_.store(false);
         frame_ready_ = false;
+        present_status_ = 0;
+        frame_width_.store(0);
+        frame_height_.store(0);
 
         // Where "the screen" is. The context does not create anything - the
         // frontend's is current on this thread - it only answers with the
@@ -119,6 +122,9 @@ namespace eka2l1::libretro {
         }
 
         os_thread_.reset();
+
+        // The window server goes with the system
+        winserv_.store(nullptr);
 
         if (symsys) {
             symsys->set_graphics_driver(nullptr);
