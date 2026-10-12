@@ -22,6 +22,10 @@ The core needs a device made from a firmware dump of a Symbian phone or an N-Gag
 
 How a Symbian title is mapped onto the single file a frontend hands a core is described in [src/emu/libretro/CONTENT_MODEL.md](src/emu/libretro/CONTENT_MODEL.md).
 
+## Changes
+
+What changed in the core is in [CHANGELOG.md](CHANGELOG.md).
+
 ## Building
 
 ```
