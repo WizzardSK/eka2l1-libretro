@@ -49,6 +49,10 @@ namespace {
     constexpr unsigned DEFAULT_WIDTH = 176;
     constexpr unsigned DEFAULT_HEIGHT = 208;
 
+    // The audio the core hands over each run: the driver's rate over the 60
+    // runs a second the core declares
+    constexpr unsigned AUDIO_FRAMES_PER_RUN = eka2l1::libretro::audio_driver_libretro::OUTPUT_RATE / 60;
+
     eka2l1::libretro::emulator emu;
 
     retro_hw_render_callback hw_render{};
@@ -187,7 +191,7 @@ RETRO_API void retro_get_system_av_info(struct retro_system_av_info *info) {
     info->geometry.max_height = DEFAULT_HEIGHT;
     info->geometry.aspect_ratio = static_cast<float>(DEFAULT_WIDTH) / static_cast<float>(DEFAULT_HEIGHT);
     info->timing.fps = 60.0;
-    info->timing.sample_rate = 44100.0;
+    info->timing.sample_rate = static_cast<double>(eka2l1::libretro::audio_driver_libretro::OUTPUT_RATE);
 }
 
 RETRO_API void retro_set_controller_port_device(unsigned, unsigned) {}
@@ -198,11 +202,19 @@ RETRO_API void retro_run(void) {
     if (input_poll_cb)
         input_poll_cb();
 
+    // Exactly one frame of audio a run - 44100 / 60 - whatever the emulator
+    // is doing: the frontend paces itself on it
+    static std::int16_t audio_frame[AUDIO_FRAMES_PER_RUN * 2];
+
     if (!emulator_started) {
         // Nothing is running: hand the frontend a repeat so it has something
         // to pace on rather than a stall.
         if (video_cb)
             video_cb(nullptr, DEFAULT_WIDTH, DEFAULT_HEIGHT, 0);
+        if (audio_batch_cb) {
+            std::memset(audio_frame, 0, sizeof(audio_frame));
+            audio_batch_cb(audio_frame, AUDIO_FRAMES_PER_RUN);
+        }
         return;
     }
 
@@ -214,6 +226,11 @@ RETRO_API void retro_run(void) {
 
     if (video_cb)
         video_cb(got_frame ? RETRO_HW_FRAME_BUFFER_VALID : nullptr, DEFAULT_WIDTH, DEFAULT_HEIGHT, 0);
+
+    if (audio_batch_cb) {
+        emu.mix_audio(audio_frame, AUDIO_FRAMES_PER_RUN);
+        audio_batch_cb(audio_frame, AUDIO_FRAMES_PER_RUN);
+    }
 }
 
 namespace {

@@ -7,6 +7,7 @@
 #include <config/config.h>
 #include <drivers/graphics/backend/emu_window_libretro.h>
 #include <drivers/graphics/graphics.h>
+#include <libretro_audio.h>
 #include <system/epoc.h>
 
 #include <atomic>
@@ -73,6 +74,11 @@ namespace eka2l1::libretro {
 
         drivers::emu_window_libretro *window() { return window_.get(); }
 
+        // One frame of audio for the frontend: `frames` stereo frames at
+        // audio_driver_libretro::OUTPUT_RATE. Silence until the emulator's
+        // audio driver is there.
+        void mix_audio(std::int16_t *out, const std::size_t frames);
+
     private:
         bool install_package_and_launch(const std::string &path);
         bool launch_uid(std::uint32_t uid);
@@ -103,6 +109,10 @@ namespace eka2l1::libretro {
 
         std::unique_ptr<drivers::emu_window_libretro> window_;
         std::unique_ptr<drivers::graphics_driver> graphics_driver_;
+
+        // Made on the OS thread while the frontend's already asks for audio
+        std::unique_ptr<audio_driver_libretro> audio_driver_;
+        std::mutex audio_driver_lock_;
 
         std::unique_ptr<std::thread> os_thread_;
 

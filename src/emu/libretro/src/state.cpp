@@ -78,6 +78,19 @@ namespace eka2l1::libretro {
         symsys->mount(drive_z, drive_media::rom,
             eka2l1::add_path(conf.storage, "/drives/z/"), io_attrib_internal | io_attrib_write_protected);
 
+        // The audio driver, which mixes the emulator's streams for the
+        // frontend; its MIDI banks are among the files written out at start
+        {
+            auto driver = std::make_unique<audio_driver_libretro>(static_cast<std::uint32_t>(conf.audio_master_volume),
+                (conf.midi_backend == config::MIDI_BACKEND_MINIBAE) ? drivers::player_type_minibae : drivers::player_type_tsf);
+            driver->set_bank_path(drivers::MIDI_BANK_TYPE_HSB, eka2l1::runtime_resource_path(conf.hsb_bank_path));
+            driver->set_bank_path(drivers::MIDI_BANK_TYPE_SF2, eka2l1::runtime_resource_path(conf.sf2_bank_path));
+
+            const std::lock_guard<std::mutex> guard(audio_driver_lock_);
+            audio_driver_ = std::move(driver);
+        }
+        symsys->set_audio_driver(audio_driver_.get());
+
         // The patch libraries, the functions the emulator provides to the
         // guest, the services that start after boot, and the boot itself.
         // Without this an application starts into a system that is not
@@ -114,6 +127,15 @@ namespace eka2l1::libretro {
         pkgmngr->migrate_legacy_registries();
 
         brought_up_ = true;
+    }
+
+    void emulator::mix_audio(std::int16_t *out, const std::size_t frames) {
+        const std::lock_guard<std::mutex> guard(audio_driver_lock_);
+        if (audio_driver_) {
+            audio_driver_->mix(out, frames);
+        } else {
+            std::memset(out, 0, frames * 2 * sizeof(std::int16_t));
+        }
     }
 
     bool emulator::bring_up(const std::string &data_root) {

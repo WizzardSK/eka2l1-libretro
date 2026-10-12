@@ -130,5 +130,12 @@ namespace eka2l1::libretro {
 
         symsys.reset();
         app_settings.reset();
+
+        // After the system, whose streams are the driver's
+        {
+            const std::lock_guard<std::mutex> guard(audio_driver_lock_);
+            audio_driver_.reset();
+        }
+        brought_up_ = false;
     }
 }
