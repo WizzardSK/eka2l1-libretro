@@ -8,6 +8,7 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 - The system is brought up as the standalone does before content starts: the ROM drive is mounted, the patch libraries and the emulator's own functions are loaded, the after-boot services and the boot are started, and the package registries are read. Without it a game died in its main thread (gouchi, SSX 3).
 - The shaders, the MIDI sound banks and the patch libraries are carried in the core and written under `system/eka2l1/` at start, so nothing has to be copied beside the firmware.
 - The emulator's log goes to RetroArch's: warnings and errors from everywhere, and what installing and launching report. A package that would not install said only "Could not start" (gouchi).
+- Linux: the core builds without the X11, OpenGL, Wayland, GTK, PulseAudio and ALSA development packages. It linked none of them; the GLX and Wayland contexts of the standalone are no longer compiled into it.
 - The libretro buildbot recipe covers Windows x64 (cross-built on Linux with llvm-mingw, FFmpeg included), Android arm64-v8a and macOS arm64 and x86_64, besides Linux x86_64 and arm64.
 - Windows Media Foundation player: a seek goes to the time asked for; every seek went to 0.
 - Content behind a URI is read through the frontend's VFS: a `.sis`, `.sisx` or `.n-gage` picked from Android's storage access framework (`saf://`, the Play Store RetroArch) is installed, and `.eka2l1` shortcuts are read the same way.

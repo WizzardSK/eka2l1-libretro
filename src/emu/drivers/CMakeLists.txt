@@ -238,7 +238,10 @@ elseif(ANDROID)
         src/graphics/backend/context_egl_android.cpp
         src/graphics/backend/context_egl_android.h
     )
-else()
+elseif (NOT EKA2L1_BUILD_LIBRETRO)
+    # Not in the libretro core: the frontend owns the window and the context
+    # (context_libretro), the GL functions come through glad, and the core
+    # neither needs the X11, OpenGL and Wayland packages to build nor links them.
     find_package(X11 REQUIRED)
     find_package(OpenGL REQUIRED)
     find_package(Wayland REQUIRED EGL)
