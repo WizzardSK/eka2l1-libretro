@@ -235,18 +235,15 @@ namespace {
 
         eka2l1::drivers::graphics::gl_context_libretro::set_proc_address_getter(hw_render.get_proc_address);
 
+        // Loaded by the emulator's OS thread, once the system is up
+        emu.queue_content(content_path);
+
         emulator_started = emu.start([]() -> unsigned int {
             // Per frame, never cached: the frontend is entitled to hand over a
             // different framebuffer each time.
             return static_cast<unsigned int>(hw_render.get_current_framebuffer());
         });
 
-        if (emulator_started && !content_path.empty()) {
-            if (!emu.load_content(content_path)) {
-                if (log_cb)
-                    log_cb(RETRO_LOG_ERROR, "Could not start %s\n", content_path.c_str());
-            }
-        }
     }
 
     void context_destroy() {

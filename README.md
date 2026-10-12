@@ -13,6 +13,7 @@ Builds for Windows, Linux (x86_64, arm64), macOS (Apple Silicon, Intel) and Andr
 The core needs a device made from a firmware dump of a Symbian phone or an N-Gage, which you have to dump yourself:
 
 - Put the firmware (an RPKG, or a ROM with its ROFS images) into RetroArch's system directory, under `system/eka2l1/firmware/`. The core installs it the first time it starts.
+- Nothing else has to be copied: the emulator's own data files (its shaders, MIDI sound banks and patch libraries) are inside the core, which writes them to `system/eka2l1/resources/` and `system/eka2l1/patch/` when it starts.
 
 ## Content
 

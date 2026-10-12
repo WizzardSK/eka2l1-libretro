@@ -87,6 +87,18 @@ namespace eka2l1::libretro {
     void emulator::os_thread_main() {
         common::set_thread_name("EKA2L1 Symbian OS");
 
+        // On this thread, as in standalone: the services started here talk to
+        // the graphics driver, which the frontend's thread runs meanwhile.
+        // The content after it, into a system that has booted.
+        finish_bring_up();
+
+        if (!pending_content_.empty()) {
+            if (!load_content(pending_content_)) {
+                LOG_ERROR(FRONTEND_CMDLINE, "Could not start {}", pending_content_);
+            }
+            pending_content_.clear();
+        }
+
         while (!should_quit_.load()) {
             symsys->loop();
         }
