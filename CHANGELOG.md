@@ -4,6 +4,7 @@ What changed in the libretro core of this fork, newest first. Changes that come 
 
 ## Unreleased
 
+- Linux: the core exports only the libretro API (a version script); it exported some thirty thousand of its own symbols, which could clash with libraries the frontend loads.
 - Linux: the core builds without the X11, OpenGL, Wayland, GTK, PulseAudio and ALSA development packages. It linked none of them; the GLX and Wayland contexts of the standalone are no longer compiled into it.
 - The libretro buildbot recipe covers Windows x64 (cross-built on Linux with llvm-mingw, FFmpeg included), Android arm64-v8a and macOS arm64 and x86_64, besides Linux x86_64 and arm64.
 - Windows Media Foundation player: a seek goes to the time asked for; every seek went to 0.

@@ -66,6 +66,14 @@ if (UNIX AND NOT APPLE)
     target_link_options(eka2l1_libretro PRIVATE -Wl,-Bsymbolic)
 endif()
 
+# And only the libretro API goes out of it: it exported some thirty thousand of its own
+# symbols, which could clash with libraries the frontend loads
+if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_link_options(eka2l1_libretro PRIVATE
+        "-Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/link.T" -Wl,--exclude-libs,ALL)
+    set_property(TARGET eka2l1_libretro APPEND PROPERTY LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/link.T")
+endif()
+
 # The GL loader asks EGL for the functions on Android
 if (ANDROID)
     target_link_libraries(eka2l1_libretro PRIVATE EGL GLESv3 log android)
