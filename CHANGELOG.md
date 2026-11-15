@@ -2,7 +2,7 @@
 
 What changed in the libretro core of this fork, newest first. Changes that come with a merge of upstream EKA2L1 are in upstream's own history; a merge is noted here with the upstream version it brought in.
 
-## Unreleased
+## October 2026
 
 - Linux: the core exports only the libretro API (a version script); it exported some thirty thousand of its own symbols, which could clash with libraries the frontend loads.
 - Linux: the core builds without the X11, OpenGL, Wayland, GTK, PulseAudio and ALSA development packages. It linked none of them; the GLX and Wayland contexts of the standalone are no longer compiled into it.
